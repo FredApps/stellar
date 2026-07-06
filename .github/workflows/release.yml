@@ -1,0 +1,72 @@
+name: Release MS-DOS build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Open Watcom
+        uses: open-watcom/setup-watcom@v1
+        with:
+          version: "2.0"
+          target: "dos"
+
+      - name: Extract release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $text = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?ms)^##\s+$([regex]::Escape($tag))\s+-\s+[^\r\n]+\r?\n(?<body>.*?)(?=^##\s+v|\z)"
+          $match = [regex]::Match($text, $pattern)
+          if (-not $match.Success -or [string]::IsNullOrWhiteSpace($match.Groups['body'].Value)) {
+            Write-Error "CHANGELOG.md is missing a non-empty section for $tag. Add '## $tag - YYYY-MM-DD' before tagging."
+            exit 1
+          }
+          New-Item -ItemType Directory -Force release | Out-Null
+          $body = "# $tag`n`n" + $match.Groups['body'].Value.Trim() + "`n"
+          Set-Content -LiteralPath release\RELEASE_NOTES.md -Value $body -Encoding UTF8
+
+      - name: Build executable
+        shell: pwsh
+        run: |
+          wmake -f build\wmakefile
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item SHOOTER.EXE release\STELLAR.EXE
+          Copy-Item dist\README.TXT release\README.TXT
+          python build\mkfloppy.py release\STELLAR.IMG release\STELLAR.EXE release\README.TXT
+          Compress-Archive -Path release\STELLAR.EXE,release\STELLAR.IMG,release\README.TXT -DestinationPath release\Stellar-MS-DOS.zip -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stellar-MS-DOS
+          path: |
+            release/STELLAR.EXE
+            release/STELLAR.IMG
+            release/README.TXT
+            release/Stellar-MS-DOS.zip
+            release/RELEASE_NOTES.md
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release/RELEASE_NOTES.md
+          files: |
+            release/STELLAR.EXE
+            release/STELLAR.IMG
+            release/README.TXT
+            release/Stellar-MS-DOS.zip

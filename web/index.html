@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stellar Assault</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #000; overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #cdf;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #wrap {
+    position: fixed; inset: 0 0 108px 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #000;
+  }
+  #screen {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: #000;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  #fsbtn {
+    position: fixed; right: 10px; top: 10px; z-index: 5;
+    display: none;
+    background: #111; color: #9be; border: 1px solid #345;
+    font-family: inherit; font-size: 13px; padding: 6px 10px; cursor: pointer;
+    min-width: 112px; text-align: center; white-space: nowrap;
+    opacity: 0.75;
+  }
+  #fsbtn:hover { opacity: 1; }
+  #boot {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background:
+      radial-gradient(circle at 50% 20%, rgba(40,90,130,.32), transparent 34%),
+      linear-gradient(#02050a, #000);
+    color: #cdf; text-align: center; padding: 16px;
+    box-sizing: border-box;
+  }
+  .boot-card {
+    width: min(520px, calc(100vw - 28px));
+    border: 2px solid #345;
+    background: rgba(2, 8, 16, .94);
+    box-shadow: 0 0 0 3px #000, 0 0 32px rgba(72,190,255,.18);
+    padding: 18px;
+  }
+  #boot h1 { color: #fe6; letter-spacing: 3px; font-size: clamp(23px, 6vw, 34px); margin: 0 0 12px; }
+  #boot p  { margin: 5px 0; color: #9ab7c8; font-size: 13px; line-height: 1.35; }
+  #boot .score-status { color: #8fd; margin-top: 12px; }
+  .boot-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 16px;
+  }
+  button,
+  .button-link {
+    font-family: inherit;
+    background: #07131f;
+    color: #dff7ff;
+    border: 1px solid #2b6682;
+    box-shadow: inset 0 0 0 1px #000;
+    cursor: pointer;
+    touch-action: manipulation;
+    white-space: nowrap;
+    text-decoration: none;
+    box-sizing: border-box;
+  }
+  button:active,
+  .button-link:active { background: #174462; color: #fff; transform: translateY(1px); }
+  .boot-actions button,
+  .boot-actions .button-link {
+    min-height: 38px; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 8px;
+  }
+  #touchControls {
+    position: fixed; z-index: 6; left: 10px; right: 10px; bottom: 10px;
+    display: none;
+    grid-template-columns: 1.35fr 1fr 1fr 1fr .82fr .82fr .82fr .82fr;
+    gap: 8px;
+  }
+  #touchControls button {
+    min-height: 48px;
+    padding: 0 6px;
+    font-size: 14px;
+    color: #dff7ff;
+  }
+  #touchControls .primary { color: #fff6b0; border-color: #9a8538; background: #221a07; }
+  #touchControls .danger { color: #ffd4ef; border-color: #914577; background: #20101d; }
+  #touchControls .compact { font-size: 12px; letter-spacing: 0; }
+  #touchControls .entry-only { display: none; }
+  body.entry-mode #touchControls .entry-only { display: block; }
+  #nameInput {
+    display: none;
+    position: fixed; z-index: 7; left: 50%; bottom: 122px;
+    transform: translateX(-50%);
+    width: min(192px, calc(100vw - 24px)); height: 34px;
+    box-sizing: border-box; padding: 4px 8px;
+    font: 20px 'Courier New', monospace; text-align: center; text-transform: uppercase;
+    color: #fff; background: #07131f; border: 2px solid #2b6682;
+    user-select: text; -webkit-user-select: text; touch-action: manipulation;
+  }
+  body.entry-mode #nameInput { display: block; }
+  html:fullscreen,
+  html:-webkit-full-screen {
+    width: 100%; height: 100%; background: #000;
+  }
+  html:fullscreen body,
+  html:-webkit-full-screen body {
+    width: 100%; height: 100%; overflow: hidden; background: #000;
+  }
+  html:fullscreen #fsbtn,
+  html:-webkit-full-screen #fsbtn {
+    display: none;
+  }
+  @media (max-width: 720px) {
+    #fsbtn { display: none; }
+    #touchControls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    #touchControls button { min-height: 46px; font-size: 12px; padding: 0 4px; }
+    #touchControls .compact { font-size: 10px; }
+    .boot-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (hover: none), (pointer: coarse) {
+    #fsbtn { display: none; }
+    #touchControls { display: grid; }
+  }
+  @media (orientation: landscape) and (max-height: 520px) {
+    #wrap { inset: 0 166px 0 0; }
+    #touchControls {
+      left: auto; right: 8px; top: 8px; bottom: 8px; width: 146px;
+      grid-template-columns: 1fr;
+      align-content: center;
+    }
+    #touchControls button { min-height: 34px; font-size: 11px; }
+    #touchControls .compact { font-size: 10px; }
+    #nameInput { left: calc((100vw - 166px) / 2); bottom: 10px; height: 30px; font-size: 18px; }
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="screen" width="320" height="200"></canvas></div>
+<button id="fsbtn" title="Fullscreen (F)">FULLSCREEN</button>
+<div id="touchControls" aria-label="Touch controls">
+  <button class="primary" data-hold="SPACE">FIRE</button>
+  <button data-hold="SHIFT">BOOST</button>
+  <button data-tap="CTRL">MSL</button>
+  <button class="danger" data-tap="B">BOMB</button>
+  <button data-tap="P">PAUSE</button>
+  <button data-tap="M">MUTE</button>
+  <button data-tap="H">HELP</button>
+  <button class="compact" data-action="fullscreen">FULLSCREEN</button>
+  <button class="entry-only" data-entry="BKSP">BKSP</button>
+  <button class="entry-only primary" data-entry="ENTER">ENTER</button>
+</div>
+<input id="nameInput" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" enterkeyhint="done" inputmode="text" aria-label="High score name">
+<div id="boot">
+  <div class="boot-card">
+    <h1>STELLAR ASSAULT</h1>
+    <p>WASD, arrows, or pointer drag steer. Space fires. Shift boosts.</p>
+    <p>Ctrl launches missiles. B drops bomb. H help. M mute.</p>
+    <p id="scoreStatus" class="score-status">SYNCING SCORES</p>
+    <div class="boot-actions">
+      <button id="startBtn">START</button>
+      <button id="bootFullBtn">FULLSCREEN</button>
+      <button id="bootMuteBtn">MUTE</button>
+      <button id="bootHelpBtn">HELP</button>
+      <a class="button-link" href="https://github.com/FredApps/Stellar" target="_blank" rel="noopener">GITHUB</a>
+      <a class="button-link" href="https://github.com/FredApps/stellar/releases/latest" target="_blank" rel="noopener">MS-DOS</a>
+    </div>
+  </div>
+</div>
+<script src="shooter.js"></script>
+</body>
+</html>

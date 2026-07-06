@@ -1,0 +1,49 @@
+# Local toolchains and emulator installs
+/tools/
+
+# Open Watcom build output
+/*.obj
+/*.err
+/*.map
+/*.lnk
+/SHOOTER.EXE
+/STELLAR.EXE
+
+# Verification output and runtime state
+/TITLE.BMP
+/FRAME.BMP
+/HELP1.BMP
+/HELP2.BMP
+/AUDIO.TXT
+/BENCH.TXT
+/HISCORE.DAT
+
+# Generated release artifacts
+/dist/*.EXE
+/dist/*.IMG
+/dist/*.ZIP
+/release/
+
+# Local DOSBox configs contain machine-specific mount paths
+/build/*.conf
+
+# Local deployment and secret material
+/.secrets/
+/.ssh/
+/.codex/
+/.claude/
+/.env
+/.env.*
+/App_Data/
+/web/App_Data/
+*.key
+*.pem
+*.p12
+*.pfx
+*.kdbx
+
+# OS/editor noise
+Thumbs.db
+.DS_Store
+*.swp
+*.tmp
