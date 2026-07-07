@@ -249,7 +249,7 @@ static void reset_game(void)
     player.lives = (g_diff == DIF_EASY) ? 5 : (g_diff == DIF_HARD) ? 2 : 3;
     player.gun = GUN_MIN; player.wtype = WT_CANNON;
     player.msl = 5; player.bombs = (g_diff == DIF_HARD) ? 1 : 2;
-    player.shield = (g_diff == DIF_EASY) ? 400 : 0;
+    player.shield = (g_diff == DIF_EASY) ? 200 : 0;   /* easy: brief invuln head-start */
     player.invuln = 0; player.firecd = 0; player.rapid = 0;
     player.boost = BOOST_MAX; player.boost_cd = 0; player.boosting = FALSE;
     player.combo = 0; player.combo_t = 0; player.max_combo = 0; player.alive = TRUE;
@@ -459,6 +459,12 @@ static void player_fire(void)
             add_pbullet(cx + k * 3, cy, k, -5, WT_WAVE);
         cd = 15;
         break; }
+    case WT_WAVELASER: {                          /* wide arc of piercing beams */
+        i16 spread = g + 1, k;
+        for (k = -spread; k <= spread; k++)
+            add_pbullet(cx + k * 3, cy - 2, k, -10, WT_LASER);
+        cd = 11;
+        break; }
     default:                                      /* WT_CANNON */
         switch (g) {
         case 1:  add_pbullet(cx - 3, cy, 0, -7, 0); add_pbullet(cx + 3, cy, 0, -7, 0); break;
@@ -596,11 +602,15 @@ static void apply_powerup(u8 type)
     switch (type) {
         case PU_GUN:     if (player.gun < GUN_MAX) player.gun++; break;
         case PU_RAPID:   player.rapid  = 700; break;
-        case PU_SHIELD:  player.shield = 500; break;
+        case PU_SHIELD:  player.shield = 350; break;   /* ~10 s of invulnerability at 35 FPS */
         case PU_LIFE:    if (player.lives < 9) player.lives++; break;
         case PU_MISSILE: player.msl += 4; if (player.msl > 30) player.msl = 30; break;
-        case PU_LASER:   player.wtype = WT_LASER; break;
-        case PU_WAVE:    player.wtype = WT_WAVE;  break;
+        /* Laser onto an existing Wave (or already fused) fuses into the
+           Wave-Laser: a wide arc of piercing beams, an upgrade over both. */
+        case PU_LASER:   player.wtype = (player.wtype == WT_WAVE || player.wtype == WT_WAVELASER)
+                                        ? WT_WAVELASER : WT_LASER; break;
+        case PU_WAVE:    player.wtype = (player.wtype == WT_LASER || player.wtype == WT_WAVELASER)
+                                        ? WT_WAVELASER : WT_WAVE; break;
         case PU_BOMB:    if (player.bombs < 10) player.bombs++; break;
         case PU_SCORE:   score_add(500 + (u32)wave * 50UL); break;
     }
@@ -632,10 +642,13 @@ static void smart_bomb(void)
 static void hurt_player(void)
 {
     if (player.invuln > 0) return;
+    /* Active shield = full invulnerability for its whole duration: absorb the
+       hit without popping the shield or breaking the combo. Brief i-frames
+       keep it to one spark per incoming shot. */
+    if (player.shield > 0) { player.invuln = 8;
+        burst(player.x + 8, player.y + 8, 10, C_LBLUE, C_WHITE); snd_sfx(SFX_HIT); return; }
     wave_hit = 1; combo_broken = 1;
     player.combo = 0; player.combo_t = 0;
-    if (player.shield > 0) { player.shield = 0; player.invuln = 40;
-        burst(player.x + 8, player.y + 8, 12, C_LBLUE, C_WHITE); snd_sfx(SFX_HIT); return; }
     player.lives--;
     player.invuln = 90;
     player.rapid = 0;
@@ -647,9 +660,10 @@ static void hurt_player(void)
     snd_sfx(SFX_EXPLODE);
     if (player.lives <= 0) player.alive = FALSE;
     else {
-        /* pity: if this life earned little, grant a shield (not on HARD) */
+        /* pity: if this life earned little, grant a brief shield (not on HARD).
+           Kept short since a shield is now full invulnerability while active. */
         if (g_diff != DIF_HARD && score - last_death_score < 800)
-            player.shield = (g_diff == DIF_EASY) ? 360 : 240;
+            player.shield = (g_diff == DIF_EASY) ? 140 : 100;
         last_death_score = score;
     }
 }
@@ -1006,7 +1020,7 @@ static void draw_dust(void)
     }
 }
 
-static const char *WNAME[WT_COUNT] = { "CANNON", "LASER", "WAVE" };
+static const char *WNAME[WT_COUNT] = { "CANNON", "LASER", "WAVE", "WVLAS" };
 static const char *BOSSNAME[3] = { "DREADNOUGHT", "WARSHIP", "HIVE" };
 
 static void draw_hud(void)
@@ -1025,7 +1039,8 @@ static void draw_hud(void)
     text_draw(4, 190, buf, C_LGREEN);
     sprintf(buf, "%s%d", WNAME[player.wtype], player.gun);
     text_draw(36, 190, buf, (player.wtype == WT_LASER) ? C_LCYAN
-                          : (player.wtype == WT_WAVE) ? C_LMAG : (u8)(PAL_FIRE + 11));
+                          : (player.wtype == WT_WAVE) ? C_LMAG
+                          : (player.wtype == WT_WAVELASER) ? C_WHITE : (u8)(PAL_FIRE + 11));
     sprintf(buf, "M%02d", player.msl);
     text_draw(124, 190, buf, C_LGRAY);
     sprintf(buf, "B%02d", player.bombs);
@@ -1236,7 +1251,7 @@ static void draw_help(void)
         text_center(8, "PICKUPS", C_YELLOW);
         help_row( 24, PU_GUN,     "GUN +1 LEVEL. -1 WHEN YOU DIE");
         help_row( 40, PU_RAPID,   "RAPID FIRE FOR A WHILE");
-        help_row( 56, PU_SHIELD,  "SHIELD: ABSORBS ONE HIT");
+        help_row( 56, PU_SHIELD,  "SHIELD: 10 SEC INVULNERABLE");
         help_row( 72, PU_LIFE,    "EXTRA SHIP");
         help_row( 88, PU_MISSILE, "+4 MISSILES (MAX 30)");
         help_row(104, PU_LASER,   "LASER GUN: FAST, PIERCES");
@@ -1300,6 +1315,7 @@ void game_run(void)
         if (state == ST_PLAY && key_hit(SC_P)) {
             paused = !paused;
             if (paused) snd_silence();
+            kbd_clear();               /* drop held keys so the ship can't drift across a pause */
         }
 
         if (state != ST_PLAY || !paused) { update_stars(); update_dust(); }
@@ -1319,7 +1335,7 @@ void game_run(void)
             break;
         case ST_PLAY:
             if (!paused) update_play();
-            if (key_hit(SC_ESC)) { state = ST_TITLE; snd_music_set(MUS_TITLE); }
+            if (key_hit(SC_ESC)) { state = ST_TITLE; snd_music_set(MUS_TITLE); kbd_clear(); }
             if (!player.alive) {
                 remember_run();
                 snd_music_set(MUS_TITLE);

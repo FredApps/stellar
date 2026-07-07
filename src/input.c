@@ -46,6 +46,14 @@ void kbd_remove(void)
     installed = FALSE;
 }
 
+void kbd_clear(void)
+{
+    int i;
+    _disable();                          /* keep the ISR from racing the wipe */
+    for (i = 0; i < 128; i++) { g_key[i] = 0; g_edge[i] = 0; }
+    _enable();
+}
+
 bool key_pressed(u8 sc) { return g_key[sc & 0x7F] ? TRUE : FALSE; }
 
 bool key_hit(u8 sc)

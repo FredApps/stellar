@@ -103,8 +103,12 @@ void vga_bg_blit(u16 yoff)
 
 void vga_wait_vsync(void)
 {
-    while (inp(0x3DA) & 0x08) ;      /* wait until not in retrace */
-    while (!(inp(0x3DA) & 0x08)) ;   /* wait for retrace start    */
+    /* Bounded spins: on hardware where port 0x3DA never toggles bit 3 the
+       game must not hard-hang, since our INT 9 handler disables Ctrl-Alt-Del.
+       ~60000 iterations is far longer than a real ~16 ms retrace period. */
+    u16 g;
+    for (g = 0; g < 60000 && (inp(0x3DA) & 0x08); g++) ;    /* wait until not in retrace */
+    for (g = 0; g < 60000 && !(inp(0x3DA) & 0x08); g++) ;   /* wait for retrace start    */
 }
 
 void vga_present(void)

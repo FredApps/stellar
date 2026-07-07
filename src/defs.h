@@ -66,10 +66,11 @@ typedef unsigned char  bool;
 #define GUN_MAX   4
 
 /* main weapon type */
-#define WT_CANNON 0     /* spread bullets (default)    */
-#define WT_LASER  1     /* fast piercing beams         */
-#define WT_WAVE   2     /* wide slow arc               */
-#define WT_COUNT  3
+#define WT_CANNON   0   /* spread bullets (default)          */
+#define WT_LASER    1   /* fast piercing beams               */
+#define WT_WAVE     2   /* wide slow arc                     */
+#define WT_WAVELASER 3  /* wide arc of piercing beams (fused)*/
+#define WT_COUNT    4
 
 /* difficulty */
 #define DIF_EASY   0
@@ -79,7 +80,7 @@ typedef unsigned char  bool;
 /* powerup types */
 #define PU_GUN     0    /* +1 gun level (persistent)   */
 #define PU_RAPID   1    /* timed fast fire             */
-#define PU_SHIELD  2    /* absorbs one hit             */
+#define PU_SHIELD  2    /* ~10 s full invulnerability   */
 #define PU_LIFE    3    /* extra ship                  */
 #define PU_MISSILE 4    /* +4 homing missiles          */
 #define PU_LASER   5    /* switch to laser weapon      */
