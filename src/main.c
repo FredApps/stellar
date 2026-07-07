@@ -16,7 +16,8 @@
      B: game track alone (background density check)
      C: game track with sfx injected (preemption + resume check)
      D: fire sfx spam followed by one explosion (priority check)
-     E: new pickup/combo/phase effects                                */
+     E: new pickup/combo/phase effects
+     F: win track alone                                                */
 static int audiodump(void)
 {
     FILE *f = fopen("AUDIO.TXT", "w");
@@ -53,6 +54,9 @@ static int audiodump(void)
         snd_update();
         fprintf(f, "%d\n", snd_last_freq());
     }
+    fprintf(f, "F\n");
+    snd_music_set(MUS_WIN);
+    for (i = 0; i < 180; i++) { snd_update(); fprintf(f, "%d\n", snd_last_freq()); }
     snd_silence();
     fclose(f);
     return 0;

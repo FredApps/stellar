@@ -92,12 +92,21 @@ static const i16 title_mel[][2] = {
     {440,8},{494,10},{523,20},{0,10}
 };
 
+/* victory theme: bright ascending loop for the campaign clear screen */
+static const i16 win_mel[][2] = {
+    {523,8},{659,8},{784,8},{1047,16},{0,4},
+    {988,8},{880,8},{784,12},{659,8},{784,18},{0,6},
+    {698,8},{880,8},{1047,8},{1175,18},{0,6},
+    {1047,10},{784,10},{880,10},{1047,24},{0,14}
+};
+
 static const i16 (*cur_mel)[2] = title_mel;
 static int cur_n = (int)(sizeof(title_mel) / sizeof(title_mel[0]));
 
 void snd_music_set(u8 track)
 {
     if (track == MUS_TITLE) { cur_mel = title_mel; cur_n = (int)(sizeof(title_mel)/sizeof(title_mel[0])); }
+    else if (track == MUS_WIN) { cur_mel = win_mel; cur_n = (int)(sizeof(win_mel)/sizeof(win_mel[0])); }
     else                    { cur_mel = game_mel;  cur_n = (int)(sizeof(game_mel) /sizeof(game_mel[0])); }
     music_on = TRUE; mus_idx = 0; mus_timer = 0;
 }

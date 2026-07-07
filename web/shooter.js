@@ -42,9 +42,9 @@ const BOOST_MAX=140, BOOST_MIN_START=12, BOOST_DRAIN=2,
 const SFX_FIRE=0, SFX_EXPLODE=1, SFX_POWER=2, SFX_HIT=3, SFX_BOSS=4,
       SFX_MISSILE=5, SFX_PICK1=6, SFX_PICK2=7, SFX_COMBO=8, SFX_PHASE=9,
       SFX_BOOST=10;
-const MUS_TITLE=0, MUS_GAME=1;
+const MUS_TITLE=0, MUS_GAME=1, MUS_WIN=2;
 
-const ST_TITLE=0, ST_PLAY=1, ST_OVER=2, ST_ENTRY=3, ST_SCORES=4, ST_HELP=5;
+const ST_TITLE=0, ST_PLAY=1, ST_OVER=2, ST_ENTRY=3, ST_SCORES=4, ST_HELP=5, ST_WIN=6;
 
 /* integer sine table, amplitude +-46 (identical to DOS build) */
 const sintab = [
@@ -68,6 +68,7 @@ let pal_theme = 0, pal_phase = 0;
 const paletteRGB = new Uint8Array(256 * 3);
 
 function clamp63(v) { return v < 0 ? 0 : v > 63 ? 63 : v; }
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 function pal_set(i, r, g, b) {
   paletteRGB[i*3]   = clamp63(r) << 2;
   paletteRGB[i*3+1] = clamp63(g) << 2;
@@ -249,7 +250,7 @@ const spr_missile = build(SH_MSL_W, SH_MSL_H, MISSILE_ART);
 const spr_ebullet = build(SH_EB_W, SH_EB_H, EBULLET_ART);
 const spr_pbullet = [build(SH_PB_W, SH_PB_H, PBULLET_ART), null, null];
 const spr_powerup = [];
-const spr_boss = [null, null, null];
+const spr_boss = [null, null, null, null];
 
 function build_pbul(body, core) {
   const d = new Uint8Array(SH_PB_W * SH_PB_H);
@@ -272,12 +273,13 @@ function build_pu(fill) {
 function build_boss(kind) {
   const W = SH_BOSS_W, H = SH_BOSS_H;
   const d = new Uint8Array(W * H);
-  const hull = kind === 1 ? C_LRED : kind === 2 ? C_LGREEN : C_LGRAY;
-  const edge = kind === 1 ? C_RED  : kind === 2 ? C_GREEN  : C_DGRAY;
-  const core = kind === 2 ? PAL_GLOW+4 : PAL_FIRE+4;
+  const hull = kind === 1 ? C_LRED : kind === 2 ? C_LGREEN : kind === 3 ? C_LMAG : C_LGRAY;
+  const edge = kind === 1 ? C_RED  : kind === 2 ? C_GREEN  : kind === 3 ? C_MAGENTA : C_DGRAY;
+  const core = kind === 2 || kind === 3 ? PAL_GLOW+4 : PAL_FIRE+4;
   for (let y = 0; y < H; y++) {
     let hw;
-    if (y < 4) hw = kind === 2 ? 8 : 4;
+    if (kind === 3) hw = y < 6 ? 2 + y * 3 : y < 18 ? 21 : y < 27 ? 28 - Math.floor(y / 2) : 12;
+    else if (y < 4) hw = kind === 2 ? 8 : 4;
     else if (y < 10) hw = 6 + (y-4)*3;
     else if (y < 24) hw = 22;
     else hw = 22 - (y-24)*2;
@@ -293,6 +295,17 @@ function build_boss(kind) {
   for (let x = 42; x < 46; x++) d[15*W+x] = PAL_GLOW+12;
   for (let x = 8; x < 40; x++) if (d[21*W+x]) d[21*W+x] = PAL_GLOW+8;
   for (let y = 12; y < 20; y++) for (let x = 20; x < 28; x++) d[y*W+x] = core;
+  if (kind === 3) {
+    for (let y = 5; y < 29; y++) {
+      d[y*W+23] = C_WHITE; d[y*W+24] = C_WHITE;
+    }
+    for (let x = 8; x < 40; x += 3) {
+      d[8*W+x] = PAL_GLOW+12; d[26*W+x] = PAL_GLOW+10;
+    }
+    for (let y = 10; y < 24; y++) {
+      d[y*W+9] = edge; d[y*W+38] = edge;
+    }
+  }
   for (let y = 24; y < 30; y++) {
     d[y*W+14] = PAL_FIRE+10; d[y*W+15] = PAL_FIRE+10;
     d[y*W+32] = PAL_FIRE+10; d[y*W+33] = PAL_FIRE+10;
@@ -324,7 +337,7 @@ function sprites_init() {
   spr_powerup[PU_WAVE]    = build_pu(C_LMAG);
   spr_powerup[PU_BOMB]    = build_pu(C_LRED);
   spr_powerup[PU_SCORE]   = build_pu(C_WHITE);
-  spr_boss[0] = build_boss(0); spr_boss[1] = build_boss(1); spr_boss[2] = build_boss(2);
+  spr_boss[0] = build_boss(0); spr_boss[1] = build_boss(1); spr_boss[2] = build_boss(2); spr_boss[3] = build_boss(3);
 }
 
 /* ================= input ================= */
@@ -408,6 +421,11 @@ const game_mel = [
   [147,7],[0,9],[131,7],[0,9],[110,8],[0,24],
   [98,7],[0,9],[110,7],[0,9],[123,7],[0,9],[131,7],[0,9],
   [110,7],[0,9],[98,7],[0,9],[110,8],[0,24]];
+const win_mel = [
+  [523,8],[659,8],[784,8],[1047,16],[0,4],
+  [988,8],[880,8],[784,12],[659,8],[784,18],[0,6],
+  [698,8],[880,8],[1047,8],[1175,18],[0,6],
+  [1047,10],[784,10],[880,10],[1047,24],[0,14]];
 
 function bootAudio() {
   if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
@@ -507,7 +525,7 @@ function snd_pause(p) {
 function scheduleMusic() {
   if (!ac || muted || musicPaused || musicTrack < 0) return;
   if (nextNoteTime < ac.currentTime - 0.1) nextNoteTime = ac.currentTime + 0.05; /* tab-switch snap */
-  const mel = musicTrack === MUS_TITLE ? title_mel : game_mel;
+  const mel = musicTrack === MUS_TITLE ? title_mel : musicTrack === MUS_WIN ? win_mel : game_mel;
   while (nextNoteTime < ac.currentTime + 0.30) {
     const [f, frames] = mel[musIdx];
     const dur = frames / LOGIC_HZ;   /* frame-locked tempo, like snd_update() */
@@ -635,6 +653,7 @@ let last_death_score = 0;
 let wave_kills = 0, wave_missed = 0, wave_hit = 0, combo_broken = 0;
 let risk_spawned = 0, bosses_defeated = 0, last_wave = 0, last_combo = 0, last_bosses = 0;
 let ship_bank = 1;
+let campaign_won = 0, win_pending = 0;
 let state = ST_TITLE, paused = false;
 let entry_rank = -1, entry_name = '', over_timer = 0, help_page = 0;
 let entrySubmitted = false, uiState = null;
@@ -651,10 +670,32 @@ function diff_spawn_cd_max() { return g_diff === DIF_EASY ? 36 : g_diff === DIF_
 function diff_enemy_fire_adjust() { return g_diff === DIF_EASY ? 15 : g_diff === DIF_HARD ? -18 : 0; }
 function diff_boss_hp_mul() { return g_diff === DIF_EASY ? 7 : g_diff === DIF_HARD ? 14 : 10; }
 function diff_boss_fire_cd() {
+  if (boss.kind === 3) {
+    if (g_diff === DIF_EASY) return 42 - boss.phase * 7;
+    if (g_diff === DIF_HARD) return 28 - boss.phase * 6;
+    return 34 - boss.phase * 6;
+  }
+  if (boss.kind === 1) {
+    if (g_diff === DIF_EASY) return 48 - boss.phase * 7;
+    if (g_diff === DIF_HARD) return 30 - boss.phase * 7;
+    return 38 - boss.phase * 7;
+  }
+  if (boss.kind === 0) {
+    if (g_diff === DIF_EASY) return 64 - boss.phase * 8;
+    if (g_diff === DIF_HARD) return 46 - boss.phase * 9;
+    return 54 - boss.phase * 9;
+  }
   if (g_diff === DIF_EASY) return 56 - boss.phase * 8;
   if (g_diff === DIF_HARD) return 38 - boss.phase * 10;
   return 46 - boss.phase * 10;
 }
+function boss_attack_count() { return boss.kind === 3 ? 4 : 3; }
+function boss_atk_time() {
+  let t = boss.kind === 3 ? 112 : boss.kind === 1 ? 96 : boss.kind === 0 ? 140 : 126;
+  t -= boss.phase * (boss.kind === 0 ? 22 : 26);
+  return Math.max(48, t);
+}
+function boss_pct_damage(div) { return Math.max(1, Math.ceil(boss.maxhp / div)); }
 function enemy_score(e) {
   if (e.elite) return e.type === E_SCOUT ? 180 : e.type === E_WEAVER ? 240 : 375;
   return e.type === E_SCOUT ? 100 : e.type === E_WEAVER ? 150 : 250;
@@ -728,7 +769,7 @@ function reset_game() {
   score = 0; wave = 0; flash = 0; shk = 0;
   wave_banner = 0; msg_timer = 0; msg_text = ''; ship_bank = 1;
   wave_kills = wave_missed = wave_hit = combo_broken = 0;
-  risk_spawned = 0; bosses_defeated = 0;
+  risk_spawned = 0; bosses_defeated = 0; campaign_won = 0; win_pending = 0;
   to_spawn = 0; spawn_cd = 30; last_death_score = 0;
 }
 function init_stars() {
@@ -771,15 +812,18 @@ function start_wave() {
     score += award;
     set_msg('ENDURANCE +' + award);
   }
-  if (wave % 4 === 0) {
+  if (wave === 60 || wave % 4 === 0) {
     const boss_order = [1, 0, 2];
     const boss_index = Math.floor(wave / 4) - 1;
     boss.active = true; boss.entering = true;
-    boss.kind = boss_order[boss_index % 3];
+    boss.kind = (wave === 60 && !campaign_won) ? 3 : boss_order[boss_index % 3];
     boss.phase = 0; boss.last_phase = 0; boss.summons = 0;
+    boss.atk = 0; boss.atk_t = boss_atk_time(); boss.spin = 0;
     boss.x = (SCRW - SH_BOSS_W) >> 1; boss.y = -SH_BOSS_H;
     boss.maxhp = boss.hp = 36 + wave * diff_boss_hp_mul() + boss_index * 8;
+    if (boss.kind === 3) boss.maxhp = boss.hp = boss.maxhp + 90;
     boss.dir = 1; boss.t = 0; boss.firecd = 60; boss.charge = 0;
+    boss.tx = boss.x; boss.ty = 14; boss.mv_t = 0;
     to_spawn = 0;
     snd_sfx(SFX_BOSS);
   } else {
@@ -930,42 +974,116 @@ function add_ebullet(x, y, dx, dy) {
 }
 function boss_fire() {
   const bx = boss.x + (SH_BOSS_W>>1), by = boss.y + SH_BOSS_H - 6;
+  const dir = player.x + 8 > bx ? 1 : -1;
+  const hard = g_diff === DIF_HARD;
   switch (boss.kind) {
-  case 1: {
-    const dir = player.x + 8 > bx ? 1 : -1;
-    add_ebullet(bx-8, by, dir, 3); add_ebullet(bx+8, by, dir, 3);
-    add_ebullet(bx, by, 0, 4);
-    if (g_diff !== DIF_EASY && boss.phase >= 1) add_ebullet(bx, by, dir*2, 3);
-    if (g_diff === DIF_HARD && boss.phase >= 1) {
-      add_ebullet(bx-18, by-2, -2, 3); add_ebullet(bx+18, by-2, 2, 3);
-    }
-    break; }
-  case 2:
-    if (g_diff === DIF_EASY) {
-      for (let k = -2; k <= 2; k++) add_ebullet(bx, by, k, 3);
-    } else if (g_diff === DIF_HARD) {
-      for (let k = -4; k <= 4; k++) add_ebullet(bx, by, k, 3);
-      if (boss.phase >= 1) {
-        for (let k = -2; k <= 2; k++) add_ebullet(bx, by, k*2, 2);
-        add_ebullet(bx-20, by-4, 1, 4); add_ebullet(bx+20, by-4, -1, 4);
+  case 3:
+    if (boss.atk === 1) {
+      add_ebullet(bx-18, by-2, 2, 4); add_ebullet(bx+18, by-2, -2, 4);
+      add_ebullet(bx-8, by, 1, 5); add_ebullet(bx+8, by, -1, 5);
+      if (boss.phase >= 1) add_ebullet(bx, by, 0, 6);
+    } else if (boss.atk === 2) {
+      const arms = boss.phase >= 2 ? 5 : 4;
+      for (let a = 0; a < arms; a++) {
+        const ang = (boss.spin + a * 16) & 63;
+        add_ebullet(bx, by, Math.trunc(sintab[ang] / 14),
+                    3 + (sintab[(ang + 16) & 63] > 0 ? 1 : 0));
       }
+      boss.spin = (boss.spin + 7) & 63;
+    } else if (boss.atk === 3) {
+      add_ebullet(bx, by, dir*2, 3); add_ebullet(bx, by, dir, 4);
+      add_ebullet(bx-12, by, -1, 4); add_ebullet(bx+12, by, 1, 4);
+      if (hard || boss.phase >= 2) add_ebullet(bx, by, 0, 5);
     } else {
-      for (let k = -3; k <= 3; k++) add_ebullet(bx, by, k, 3);
-      if (boss.phase >= 1) for (let k = -2; k <= 2; k++) add_ebullet(bx, by, k*2, 2);
+      for (let k = -4; k <= 4; k++)
+        if ((Math.floor(boss.t / 18) + k + 8) % 5 !== 0)
+          add_ebullet(bx + k * 8, by, Math.trunc(k / 3), 3);
+    }
+    break;
+  case 1:
+    if (boss.atk === 1) {
+      add_ebullet(bx-6, by, 0, 5); add_ebullet(bx+6, by, 0, 5);
+      if (boss.phase >= 1) add_ebullet(bx, by, 0, 6);
+    } else if (boss.atk === 2) {
+      add_ebullet(bx-10, by, 2, 3); add_ebullet(bx+10, by, -2, 3);
+      add_ebullet(bx-4, by, 1, 4); add_ebullet(bx+4, by, -1, 4);
+      if (hard && boss.phase >= 1) add_ebullet(bx, by, 0, 4);
+    } else {
+      add_ebullet(bx-8, by, dir, 3); add_ebullet(bx+8, by, dir, 3);
+      add_ebullet(bx, by, 0, 4);
+      if (g_diff !== DIF_EASY && boss.phase >= 1) add_ebullet(bx, by, dir*2, 3);
+    }
+    break;
+  case 2:
+    if (boss.atk === 1) {
+      const arms = boss.phase >= 1 ? 3 : 2;
+      for (let a = 0; a < arms; a++) {
+        const ang = (boss.spin + a * 21) & 63;
+        add_ebullet(bx, by, Math.trunc(sintab[ang] / 12),
+                    2 + (sintab[(ang + 16) & 63] > 0 ? 2 : 1));
+      }
+      boss.spin = (boss.spin + 5) & 63;
+    } else if (boss.atk === 2) {
+      add_ebullet(bx, by, dir, 3); add_ebullet(bx-3, by, dir, 4);
+      add_ebullet(bx+3, by, dir, 4);
+      if (boss.phase >= 1) add_ebullet(bx, by, dir*2, 3);
+    } else {
+      for (let k = hard ? -3 : -2; k <= (hard ? 3 : 2); k++) add_ebullet(bx, by, k, 3);
     }
     break;
   default:
-    if (g_diff === DIF_EASY) {
-      for (let k = -1; k <= 1; k++) add_ebullet(bx, by, k, 3);
-      if (boss.phase >= 2) add_ebullet(bx, by, 0, 5);
+    if (boss.atk === 1) {
+      const pc = Math.trunc((player.x + 8 - (bx - 30)) / 10);
+      for (let k = -3; k <= 3; k++)
+        if (k !== pc && k !== pc - 1) add_ebullet(bx + k * 10, by, 0, 3);
+    } else if (boss.atk === 2) {
+      add_ebullet(bx, by, dir, 4); add_ebullet(bx, by, 0, 4);
+      add_ebullet(bx-12, by, -1, 3); add_ebullet(bx+12, by, 1, 3);
     } else {
       for (let k = -2; k <= 2; k++) add_ebullet(bx, by, k, 3);
-      if ((g_diff === DIF_HARD && boss.phase >= 1) || boss.phase >= 2)
-        for (let k = -2; k <= 2; k++) add_ebullet(bx, by, k, 5);
+      if (boss.phase >= 2) add_ebullet(bx, by, 0, 5);
     }
     break;
   }
   snd_sfx(SFX_HIT);
+}
+function move_toward(v, target, step) {
+  if (v < target) return Math.min(target, v + step);
+  if (v > target) return Math.max(target, v - step);
+  return v;
+}
+function boss_move() {
+  switch (boss.kind) {
+  case 1:
+    if (--boss.mv_t <= 0) {
+      boss.mv_t = 42 - boss.phase * 8;
+      boss.dir = player.x + 8 > boss.x + (SH_BOSS_W>>1) ? 1 : -1;
+      if (rnd() & 1) boss.dir = -boss.dir;
+    }
+    boss.x += boss.dir * (3 + boss.phase);
+    boss.y = 12 + Math.trunc((sintab[(boss.t * 2) & 63] + 46) / 16);
+    break;
+  case 2:
+    boss.x = (SCRW>>1) - (SH_BOSS_W>>1) + Math.trunc(sintab[boss.t & 63] * (boss.phase + 2) / 2);
+    boss.y = 16 + Math.trunc(sintab[(boss.t + 16) & 63] / 10);
+    break;
+  case 3:
+    boss.x = (SCRW>>1) - (SH_BOSS_W>>1) + Math.trunc(sintab[(boss.t * 2) & 63] * 3 / 2);
+    boss.y = 15 + Math.trunc(sintab[(boss.t * 3 + 16) & 63] / 6);
+    if ((boss.t & 127) === 0) boss.charge = 18;
+    break;
+  default:
+    if (--boss.mv_t <= 0) {
+      boss.mv_t = 82 - boss.phase * 14;
+      boss.tx = Math.trunc((player.x + 8) / 40) * 40 + 20 - (SH_BOSS_W>>1);
+      boss.tx = clamp(boss.tx, 4, SCRW - SH_BOSS_W - 4);
+    }
+    boss.x = move_toward(boss.x, boss.tx, 1 + boss.phase);
+    boss.y = 14 + (((boss.t >> 4) & 1) * (1 + boss.phase));
+    break;
+  }
+  boss.x = clamp(boss.x, 4, SCRW - SH_BOSS_W - 4);
+  boss.y = clamp(boss.y, 8, 34);
 }
 function spawn_blast(x, y, big) {
   for (const b of blast) if (!b.active) {
@@ -1009,6 +1127,12 @@ function apply_powerup(type) {
   else snd_sfx(SFX_PICK2);
   score_add(50);
 }
+function apply_boss_damage(dmg) {
+  if (!boss.active) return;
+  boss.hp -= dmg;
+  burst(boss.x + (SH_BOSS_W>>1), boss.y + (SH_BOSS_H>>1), 8, C_WHITE, C_YELLOW);
+  if (boss.hp <= 0) boss_die();
+}
 function smart_bomb() {
   if (player.bombs <= 0 || !player.alive) return;
   player.bombs--;
@@ -1021,7 +1145,7 @@ function smart_bomb() {
     e.hp -= 5;
     if (e.hp <= 0) { score_add(100); kill_enemy(e); }
   }
-  if (boss.active) { boss.hp -= 18; if (boss.hp <= 0) boss_die(); }
+  if (boss.active) apply_boss_damage(boss_pct_damage(3));
   snd_sfx(SFX_EXPLODE);
 }
 
@@ -1088,6 +1212,10 @@ function boss_die() {
   force_powerup(boss.x + SH_BOSS_W - 22, boss.y + 10, PU_BOMB);
   force_powerup(boss.x + (SH_BOSS_W>>1) - (SH_PU_W>>1), boss.y + 20, PU_MISSILE);
   boss.active = false;
+  if (boss.kind === 3 && wave === 60 && !campaign_won) {
+    campaign_won = 1;
+    win_pending = 1;
+  }
   snd_sfx(SFX_EXPLODE);
 }
 function missile_boom(mx, my) {
@@ -1100,8 +1228,7 @@ function missile_boom(mx, my) {
     if (e.hp <= 0) kill_enemy(e);
   }
   if (boss.active && overlap(mx-26, my-26, 52, 52, boss.x, boss.y, SH_BOSS_W, SH_BOSS_H)) {
-    boss.hp -= 18;
-    if (boss.hp <= 0) boss_die();
+    apply_boss_damage(boss_pct_damage(10));
   }
   snd_sfx(SFX_EXPLODE);
 }
@@ -1266,21 +1393,22 @@ function update_play() {
       boss.y += 2;
       if (boss.y >= 14) { boss.y = 14; boss.entering = false; }
     } else {
-      const spd = 2 + boss.phase;
-      boss.x += boss.dir * spd;
-      if (boss.x < 4) { boss.x = 4; boss.dir = 1; }
-      if (boss.x > SCRW - SH_BOSS_W - 4) { boss.x = SCRW - SH_BOSS_W - 4; boss.dir = -1; }
+      boss_move();
       if (boss.firecd === 18) { boss.charge = 18; snd_sfx(SFX_PHASE); }
       if (--boss.firecd <= 0) { boss_fire(); boss.firecd = diff_boss_fire_cd(); }
     }
     boss.t++;
     if (boss.charge > 0) boss.charge--;
+    if (--boss.atk_t <= 0) {
+      boss.atk = (boss.atk + 1) % boss_attack_count();
+      boss.atk_t = boss_atk_time();
+    }
     boss.phase = boss.hp * 3 <= boss.maxhp ? 2 : boss.hp * 3 <= boss.maxhp * 2 ? 1 : 0;
     if (boss.phase !== boss.last_phase) {
       boss.last_phase = boss.phase;
       snd_sfx(SFX_PHASE);
       set_msg('BOSS PHASE');
-      if ((boss.kind === 0 || boss.kind === 2) && boss.phase > 0 && !(boss.summons & (1 << boss.phase))) {
+      if ((boss.kind === 0 || boss.kind === 2 || boss.kind === 3) && boss.phase > 0 && !(boss.summons & (1 << boss.phase))) {
         boss.summons |= 1 << boss.phase;
         summon_escort();
       }
@@ -1313,7 +1441,9 @@ function update_play() {
   }
 
   /* wave director */
-  if (to_spawn > 0) {
+  if (win_pending) {
+    /* step() switches to ST_WIN before freeplay wave 61 starts */
+  } else if (to_spawn > 0) {
     if (--spawn_cd <= 0) { spawn_enemy(); spawn_cd = rrange(diff_spawn_cd_min(), diff_spawn_cd_max()); }
   } else if (!boss.active) {
     let clear = true;
@@ -1337,7 +1467,7 @@ function draw_dust() {
   }
 }
 const WNAME = ['CANNON', 'LASER', 'WAVE'];
-const BOSSNAME = ['DREADNOUGHT', 'WARSHIP', 'HIVE'];
+const BOSSNAME = ['DREADNOUGHT', 'WARSHIP', 'HIVE', 'OVERLORD'];
 const DIFNAME = ['EASY', 'NORMAL', 'HARD'];
 
 function draw_hud() {
@@ -1489,6 +1619,15 @@ function draw_over() {
   text_center(116, 'BEST COMBO X' + player.max_combo, C_YELLOW);
   if (frame & 16) text_center(150, 'PRESS SPACE', C_LGRAY);
 }
+function draw_win() {
+  text_center(44, 'VICTORY', C_YELLOW);
+  text_center(64, 'FINAL BOSS DESTROYED', C_WHITE);
+  text_center(88, 'SCORE ' + pad6(score), C_LGREEN);
+  text_center(104, 'MAX COMBO X' + player.max_combo, C_LCYAN);
+  text_center(120, 'BOSSES ' + bosses_defeated, C_LMAG);
+  if (frame & 16) text_center(152, 'SPACE FREEPLAY', C_WHITE);
+  text_center(168, 'ESC TITLE', C_DGRAY);
+}
 function help_row(y, pu, txt) {
   vga_sprite(52, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
   text_draw(72, y+2, txt, C_LGRAY);
@@ -1602,6 +1741,13 @@ function step() {
     break;
   case ST_PLAY:
     if (!paused) update_play();
+    if (win_pending) {
+      remember_run();
+      snd_music_set(MUS_WIN);
+      state = ST_WIN;
+      clearInput();
+      break;
+    }
     if (key_hit('ESC')) { state = ST_TITLE; paused = false; snd_music_set(MUS_TITLE); }
     if (!player.alive) {
       remember_run();
@@ -1632,6 +1778,17 @@ function step() {
     if (key_hit('SPACE')) state = ST_TITLE;
     if (key_hit('CTRL')) begin_run();
     break;
+  case ST_WIN:
+    if (key_hit('ESC')) { state = ST_TITLE; snd_music_set(MUS_TITLE); clearInput(); }
+    if (key_hit('SPACE') || key_hit('ENTER') || key_hit('CTRL')) {
+      win_pending = 0;
+      finish_wave();
+      start_wave();
+      state = ST_PLAY; paused = false;
+      snd_music_set(MUS_GAME);
+      clearInput();
+    }
+    break;
   }
 
   /* render */
@@ -1644,6 +1801,7 @@ function step() {
   case ST_HELP:   draw_help(); break;
   case ST_PLAY:   draw_play(); if (paused) text_center(96, 'PAUSED', C_WHITE); break;
   case ST_OVER:   draw_over(); break;
+  case ST_WIN:    draw_win(); break;
   case ST_SCORES: draw_scores(); break;
   case ST_ENTRY:  draw_entry(); break;
   }

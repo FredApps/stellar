@@ -17,6 +17,7 @@
 
 #define MUS_TITLE 0
 #define MUS_GAME  1
+#define MUS_WIN   2
 
 void snd_init(void);
 void snd_mute_toggle(void);

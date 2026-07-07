@@ -11,7 +11,7 @@
 #include "game.h"
 
 /* ---------------- state ---------------- */
-enum { ST_TITLE, ST_PLAY, ST_OVER, ST_ENTRY, ST_SCORES, ST_HELP, ST_QUIT };
+enum { ST_TITLE, ST_PLAY, ST_OVER, ST_ENTRY, ST_SCORES, ST_HELP, ST_WIN, ST_QUIT };
 
 static Player   player;
 static Bullet   pbul[MAX_PBULLET];
@@ -25,7 +25,8 @@ static Missile  msl[MAX_MISSILE];
 static struct {
     bool active, entering;
     i16  x, y, hp, maxhp, dir, t, firecd, charge;
-    u8   kind;               /* 0 dreadnought, 1 warship, 2 hive */
+    i16  tx, ty, mv_t;
+    u8   kind;               /* 0 dreadnought, 1 warship, 2 hive, 3 final */
     u8   phase;              /* 0 full, 1 <66%, 2 <33% (enraged) */
     u8   last_phase, summons;
     u8   atk;                /* current attack pattern within the kind */
@@ -59,6 +60,7 @@ static i16  wave_kills, wave_missed, wave_hit, combo_broken;
 static i16  risk_spawned;
 static i16  bosses_defeated, last_wave, last_combo, last_bosses;
 static u8   ship_bank;        /* 0 left, 1 straight, 2 right */
+static u8   campaign_won, win_pending;
 
 /* integer sine table, one full period, amplitude +-46 (no FPU needed) */
 static const i16 sintab[64] = {
@@ -84,6 +86,7 @@ static void kill_enemy(Enemy *e);
 static void boss_die(void);
 static void set_msg(const char *s);
 static void summon_escort(void);
+static void apply_boss_damage(i16 dmg);
 
 /* ---------------- helpers ---------------- */
 static u16 rnd(void)
@@ -135,9 +138,42 @@ static i16 diff_boss_hp_mul(void)
 
 static i16 diff_boss_fire_cd(void)
 {
+    if (boss.kind == 3) {
+        if (g_diff == DIF_EASY) return (i16)(42 - boss.phase * 7);
+        if (g_diff == DIF_HARD) return (i16)(28 - boss.phase * 6);
+        return (i16)(34 - boss.phase * 6);
+    }
+    if (boss.kind == 1) {
+        if (g_diff == DIF_EASY) return (i16)(48 - boss.phase * 7);
+        if (g_diff == DIF_HARD) return (i16)(30 - boss.phase * 7);
+        return (i16)(38 - boss.phase * 7);
+    }
+    if (boss.kind == 0) {
+        if (g_diff == DIF_EASY) return (i16)(64 - boss.phase * 8);
+        if (g_diff == DIF_HARD) return (i16)(46 - boss.phase * 9);
+        return (i16)(54 - boss.phase * 9);
+    }
     if (g_diff == DIF_EASY) return (i16)(56 - boss.phase * 8);
     if (g_diff == DIF_HARD) return (i16)(38 - boss.phase * 10);
     return (i16)(46 - boss.phase * 10);
+}
+
+static i16 boss_attack_count(void)
+{
+    return (boss.kind == 3) ? 4 : 3;
+}
+
+static i16 boss_atk_time(void)
+{
+    i16 t = (boss.kind == 3) ? 112 : (boss.kind == 1) ? 96 : (boss.kind == 0) ? 140 : 126;
+    t -= boss.phase * ((boss.kind == 0) ? 22 : 26);
+    return (t < 48) ? 48 : t;
+}
+
+static i16 boss_pct_damage(i16 div)
+{
+    i16 d = (i16)((boss.maxhp + div - 1) / div);
+    return (d < 1) ? 1 : d;
 }
 
 static u32 enemy_score(const Enemy *e)
@@ -259,7 +295,7 @@ static void reset_game(void)
     score = 0; wave = 0; flash = 0; shk = 0;
     wave_banner = 0; msg_timer = 0; msg_text[0] = 0; ship_bank = 1;
     wave_kills = wave_missed = wave_hit = combo_broken = 0;
-    risk_spawned = 0; bosses_defeated = 0;
+    risk_spawned = 0; bosses_defeated = 0; campaign_won = 0; win_pending = 0;
     to_spawn = 0; spawn_cd = 30; last_death_score = 0;
 }
 
@@ -316,16 +352,18 @@ static void start_wave(void)
         sprintf(msg_text, "ENDURANCE +%lu", award);
         msg_timer = 120;
     }
-    if (wave % 4 == 0) {              /* boss wave */
+    if (wave == 60 || wave % 4 == 0) {              /* boss wave */
         static const u8 boss_order[3] = { 1, 0, 2 };   /* warship, dreadnought, hive */
         i16 boss_index = (i16)((wave / 4) - 1);
         boss.active = TRUE; boss.entering = TRUE;
-        boss.kind = boss_order[boss_index % 3];
+        boss.kind = (wave == 60 && !campaign_won) ? 3 : boss_order[boss_index % 3];
         boss.phase = 0; boss.last_phase = 0; boss.summons = 0;
-        boss.atk = 0; boss.atk_t = 150; boss.spin = 0;
+        boss.atk = 0; boss.atk_t = boss_atk_time(); boss.spin = 0;
         boss.x = SCRW / 2 - SH_BOSS_W / 2; boss.y = -SH_BOSS_H;
         boss.maxhp = boss.hp = 36 + wave * diff_boss_hp_mul() + boss_index * 8;
+        if (boss.kind == 3) boss.maxhp = boss.hp = (i16)(boss.maxhp + 90);
         boss.dir = 1; boss.t = 0; boss.firecd = 60; boss.charge = 0;
+        boss.tx = boss.x; boss.ty = 14; boss.mv_t = 0;
         to_spawn = 0;
         snd_sfx(SFX_BOSS);
     } else {
@@ -532,6 +570,34 @@ static void boss_fire(void)
     u8  hard = (g_diff == DIF_HARD);
     i16 k;
     switch (boss.kind) {
+    case 3:                                   /* ---- FINAL CORE ---- */
+        switch (boss.atk) {
+        case 1:                               /* crossing lances */
+            add_ebullet(bx - 18, by - 2, 2, 4); add_ebullet(bx + 18, by - 2, -2, 4);
+            add_ebullet(bx - 8, by, 1, 5);     add_ebullet(bx + 8, by, -1, 5);
+            if (boss.phase >= 1) add_ebullet(bx, by, 0, 6);
+            break;
+        case 2:                               /* rotating spokes */
+            { i16 a, arms = (boss.phase >= 2) ? 5 : 4;
+              for (a = 0; a < arms; a++) {
+                  i16 ang = (i16)((boss.spin + a * 16) & 63);
+                  add_ebullet(bx, by, sintab[ang] / 14,
+                              (i16)(3 + (sintab[(ang + 16) & 63] > 0 ? 1 : 0)));
+              }
+              boss.spin = (i16)((boss.spin + 7) & 63); }
+            break;
+        case 3:                               /* aimed split burst */
+            add_ebullet(bx, by, dir * 2, 3); add_ebullet(bx, by, dir, 4);
+            add_ebullet(bx - 12, by, -1, 4); add_ebullet(bx + 12, by, 1, 4);
+            if (hard || boss.phase >= 2) add_ebullet(bx, by, 0, 5);
+            break;
+        default:                              /* curtain with a moving center gap */
+            for (k = -4; k <= 4; k++)
+                if (!((boss.t / 18 + k + 8) % 5 == 0))
+                    add_ebullet(bx + k * 8, by, k / 3, 3);
+            break;
+        }
+        break;
     case 1:                                   /* ---- WARSHIP ---- */
         switch (boss.atk) {
         case 1:                               /* rapid straight barrage */
@@ -592,6 +658,52 @@ static void boss_fire(void)
     snd_sfx(SFX_HIT);
 }
 
+static void move_toward(i16 *v, i16 target, i16 step)
+{
+    if (*v < target) { *v += step; if (*v > target) *v = target; }
+    else if (*v > target) { *v -= step; if (*v < target) *v = target; }
+}
+
+static void boss_move(void)
+{
+    i16 spd;
+    switch (boss.kind) {
+    case 1:                                   /* warship: fast strafing dashes */
+        if (--boss.mv_t <= 0) {
+            boss.mv_t = (i16)(42 - boss.phase * 8);
+            boss.dir = (player.x + 8 > boss.x + SH_BOSS_W / 2) ? 1 : -1;
+            if (rnd() & 1) boss.dir = (i16)-boss.dir;
+        }
+        spd = (i16)(3 + boss.phase);
+        boss.x += boss.dir * spd;
+        boss.y = (i16)(12 + (sintab[(boss.t * 2) & 63] + 46) / 16);
+        break;
+    case 2:                                   /* hive: slow drifting sine arcs */
+        boss.x = (i16)(SCRW / 2 - SH_BOSS_W / 2 + sintab[boss.t & 63] * (boss.phase + 2) / 2);
+        boss.y = (i16)(16 + sintab[(boss.t + 16) & 63] / 10);
+        break;
+    case 3:                                   /* final: figure-eight core */
+        boss.x = (i16)(SCRW / 2 - SH_BOSS_W / 2 + sintab[(boss.t * 2) & 63] * 3 / 2);
+        boss.y = (i16)(15 + sintab[(boss.t * 3 + 16) & 63] / 6);
+        if ((boss.t & 127) == 0) boss.charge = 18;
+        break;
+    default:                                  /* dreadnought: lane-lock crawl */
+        if (--boss.mv_t <= 0) {
+            boss.mv_t = (i16)(82 - boss.phase * 14);
+            boss.tx = (i16)(((player.x + 8) / 40) * 40 + 20 - SH_BOSS_W / 2);
+            if (boss.tx < 4) boss.tx = 4;
+            if (boss.tx > SCRW - SH_BOSS_W - 4) boss.tx = SCRW - SH_BOSS_W - 4;
+        }
+        move_toward(&boss.x, boss.tx, (i16)(1 + boss.phase));
+        boss.y = (i16)(14 + ((boss.t >> 4) & 1) * (1 + boss.phase));
+        break;
+    }
+    if (boss.x < 4) { boss.x = 4; boss.dir = 1; }
+    if (boss.x > SCRW - SH_BOSS_W - 4) { boss.x = SCRW - SH_BOSS_W - 4; boss.dir = -1; }
+    if (boss.y < 8) boss.y = 8;
+    if (boss.y > 34) boss.y = 34;
+}
+
 /* expanding-ring explosion animation */
 static void spawn_blast(i16 x, i16 y, i16 big)
 {
@@ -650,6 +762,14 @@ static void apply_powerup(u8 type)
 }
 
 /* smart bomb: clear enemy fire and damage everything on screen */
+static void apply_boss_damage(i16 dmg)
+{
+    if (!boss.active) return;
+    boss.hp -= dmg;
+    burst(boss.x + SH_BOSS_W / 2, boss.y + SH_BOSS_H / 2, 8, C_WHITE, C_YELLOW);
+    if (boss.hp <= 0) boss_die();
+}
+
 static void smart_bomb(void)
 {
     int i, cleared = 0;
@@ -663,7 +783,7 @@ static void smart_bomb(void)
         enemy[i].hp -= 5;
         if (enemy[i].hp <= 0) { score_add(100); kill_enemy(&enemy[i]); }
     }
-    if (boss.active) { boss.hp -= 18; if (boss.hp <= 0) boss_die(); }
+    if (boss.active) apply_boss_damage(boss_pct_damage(3));
     snd_sfx(SFX_EXPLODE);
 }
 
@@ -746,6 +866,10 @@ static void boss_die(void)
     force_powerup(boss.x + SH_BOSS_W - 22, boss.y + 10, PU_BOMB);
     force_powerup(boss.x + SH_BOSS_W / 2 - SH_PU_W / 2, boss.y + 20, PU_MISSILE);
     boss.active = FALSE;
+    if (boss.kind == 3 && wave == 60 && !campaign_won) {
+        campaign_won = 1;
+        win_pending = 1;
+    }
     snd_sfx(SFX_EXPLODE);
 }
 
@@ -763,8 +887,7 @@ static void missile_boom(i16 mx, i16 my)
     }
     if (boss.active &&
         overlap(mx - 26, my - 26, 52, 52, boss.x, boss.y, SH_BOSS_W, SH_BOSS_H)) {
-        boss.hp -= 18;               /* missiles are the boss-killer tool */
-        if (boss.hp <= 0) boss_die();
+        apply_boss_damage(boss_pct_damage(10));
     }
     snd_sfx(SFX_EXPLODE);
 }
@@ -968,10 +1091,7 @@ static void update_play(void)
             boss.y += 2;
             if (boss.y >= 14) { boss.y = 14; boss.entering = FALSE; }
         } else {
-            i16 spd = 2 + boss.phase;                /* enrages as HP drops */
-            boss.x += boss.dir * spd;
-            if (boss.x < 4) { boss.x = 4; boss.dir = 1; }
-            if (boss.x > SCRW - SH_BOSS_W - 4) { boss.x = SCRW - SH_BOSS_W - 4; boss.dir = -1; }
+            boss_move();
             if (boss.firecd == 18) { boss.charge = 18; snd_sfx(SFX_PHASE); }
             if (--boss.firecd <= 0) { boss_fire(); boss.firecd = diff_boss_fire_cd(); }
         }
@@ -979,8 +1099,8 @@ static void update_play(void)
         if (boss.charge > 0) boss.charge--;
         /* cycle attack pattern; switch faster when enraged */
         if (--boss.atk_t <= 0) {
-            boss.atk = (u8)((boss.atk + 1) % 3);
-            boss.atk_t = (i16)(150 - boss.phase * 35);
+            boss.atk = (u8)((boss.atk + 1) % boss_attack_count());
+            boss.atk_t = boss_atk_time();
         }
         /* phase from remaining HP */
         boss.phase = (boss.hp * 3 <= boss.maxhp) ? 2 : (boss.hp * 3 <= boss.maxhp * 2) ? 1 : 0;
@@ -988,7 +1108,7 @@ static void update_play(void)
             boss.last_phase = boss.phase;
             snd_sfx(SFX_PHASE);
             set_msg("BOSS PHASE");
-            if ((boss.kind == 0 || boss.kind == 2) && boss.phase > 0 && !(boss.summons & (1 << boss.phase))) {
+            if ((boss.kind == 0 || boss.kind == 2 || boss.kind == 3) && boss.phase > 0 && !(boss.summons & (1 << boss.phase))) {
                 boss.summons |= (u8)(1 << boss.phase);
                 summon_escort();
             }
@@ -1006,7 +1126,7 @@ static void update_play(void)
             }
         }
         /* boss body vs player */
-        if (player.alive && player.invuln == 0 &&
+        if (boss.active && player.alive && player.invuln == 0 &&
             overlap(boss.x + 2, boss.y, SH_BOSS_W - 4, SH_BOSS_H,
                     player.x + 3, player.y + 3, SH_SHIP_W - 6, SH_SHIP_H - 6))
             hurt_player();
@@ -1030,7 +1150,9 @@ static void update_play(void)
     }
 
     /* ---- wave director ---- */
-    if (to_spawn > 0) {
+    if (win_pending) {
+        /* main loop switches to ST_WIN before freeplay wave 61 starts */
+    } else if (to_spawn > 0) {
         if (--spawn_cd <= 0) { spawn_enemy(); spawn_cd = rrange(diff_spawn_cd_min(), diff_spawn_cd_max()); }
     } else if (!boss.active) {
         bool clear = TRUE;
@@ -1061,7 +1183,7 @@ static void draw_dust(void)
 }
 
 static const char *WNAME[WT_COUNT] = { "CANNON", "LASER", "WAVE" };
-static const char *BOSSNAME[3] = { "DREADNOUGHT", "WARSHIP", "HIVE" };
+static const char *BOSSNAME[NBOSS] = { "DREADNOUGHT", "WARSHIP", "HIVE", "OVERLORD" };
 
 static void draw_hud(void)
 {
@@ -1283,6 +1405,21 @@ static void draw_over(void)
     if (frame & 16) text_center(150, "PRESS SPACE", C_LGRAY);
 }
 
+static void draw_win(void)
+{
+    char b[40];
+    text_center(44, "VICTORY", C_YELLOW);
+    text_center(64, "FINAL BOSS DESTROYED", C_WHITE);
+    sprintf(b, "SCORE %06lu", score);
+    text_center(88, b, C_LGREEN);
+    sprintf(b, "MAX COMBO x%d", player.max_combo);
+    text_center(104, b, C_LCYAN);
+    sprintf(b, "BOSSES %d", bosses_defeated);
+    text_center(120, b, C_LMAG);
+    if (frame & 16) text_center(152, "SPACE FREEPLAY", C_WHITE);
+    text_center(168, "ESC TITLE", C_DGRAY);
+}
+
 /* ---------------- instruction menu ---------------- */
 static i16 help_page = 0;
 
@@ -1390,6 +1527,13 @@ void game_run(void)
             break;
         case ST_PLAY:
             if (!paused) update_play();
+            if (win_pending) {
+                remember_run();
+                snd_music_set(MUS_WIN);
+                state = ST_WIN;
+                kbd_clear();
+                break;
+            }
             if (key_hit(SC_ESC)) { state = ST_TITLE; snd_music_set(MUS_TITLE); kbd_clear(); }
             if (!player.alive) {
                 remember_run();
@@ -1429,6 +1573,17 @@ void game_run(void)
             if (key_hit(SC_CTRL)) { reset_game(); start_wave(); state = ST_PLAY; paused = FALSE;
                                     snd_music_set(MUS_GAME); }
             break;
+        case ST_WIN:
+            if (key_hit(SC_ESC)) { state = ST_TITLE; snd_music_set(MUS_TITLE); kbd_clear(); }
+            if (key_hit(SC_SPACE) || key_hit(SC_ENTER) || key_hit(SC_CTRL)) {
+                win_pending = 0;
+                finish_wave();
+                start_wave();
+                state = ST_PLAY; paused = FALSE;
+                snd_music_set(MUS_GAME);
+                kbd_clear();
+            }
+            break;
         }
 
         /* keep music/sfx running every frame regardless of what we draw */
@@ -1463,6 +1618,7 @@ void game_run(void)
                             if (paused) text_center(96, "PAUSED", C_WHITE);
                             break;
             case ST_OVER:   draw_over(); break;
+            case ST_WIN:    draw_win(); break;
             case ST_SCORES: draw_scores(); break;
             case ST_ENTRY: {
                 char b[32];

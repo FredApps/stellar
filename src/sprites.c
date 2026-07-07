@@ -8,7 +8,7 @@ u8 spr_enemy[NSTAGE][3][SH_EN_W * SH_EN_H];
 u8 spr_pbullet[3][SH_PB_W * SH_PB_H];
 u8 spr_ebullet[SH_EB_W * SH_EB_H];
 u8 spr_powerup[PU_COUNT][SH_PU_W * SH_PU_H];
-u8 spr_boss[3][SH_BOSS_W * SH_BOSS_H];
+u8 spr_boss[NBOSS][SH_BOSS_W * SH_BOSS_H];
 u8 spr_missile[SH_MSL_W * SH_MSL_H];
 
 /* ---- ROM 8x8 font pointer (INT 10h AX=1130h BH=03h -> ES:BP) ---- */
@@ -186,16 +186,17 @@ static void build_pu(u8 *dst, u8 fill)
         }
 }
 
-/* boss kinds: 0 grey dreadnought, 1 red warship, 2 green hive */
+/* boss kinds: 0 grey dreadnought, 1 red warship, 2 green hive, 3 final core */
 static void build_boss(u8 *dst, u8 kind)
 {
     i16 x, y, hw;
-    u8 hull = (kind == 1) ? C_LRED : (kind == 2) ? C_LGREEN : C_LGRAY;
-    u8 edge = (kind == 1) ? C_RED  : (kind == 2) ? C_GREEN   : C_DGRAY;
-    u8 core = (kind == 2) ? (u8)(PAL_GLOW + 4) : (u8)(PAL_FIRE + 4);
+    u8 hull = (kind == 1) ? C_LRED : (kind == 2) ? C_LGREEN : (kind == 3) ? C_LMAG : C_LGRAY;
+    u8 edge = (kind == 1) ? C_RED  : (kind == 2) ? C_GREEN  : (kind == 3) ? C_MAGENTA : C_DGRAY;
+    u8 core = (kind == 2 || kind == 3) ? (u8)(PAL_GLOW + 4) : (u8)(PAL_FIRE + 4);
     memset(dst, 0, SH_BOSS_W * SH_BOSS_H);
     for (y = 0; y < SH_BOSS_H; y++) {
-        if      (y < 4)  hw = (kind == 2) ? 8 : 4;      /* hive is wider up top */
+        if      (kind == 3) hw = (y < 6) ? 2 + y * 3 : (y < 18) ? 21 : (y < 27) ? 28 - y / 2 : 12;
+        else if (y < 4)  hw = (kind == 2) ? 8 : 4;      /* hive is wider up top */
         else if (y < 10) hw = 6 + (y - 4) * 3;
         else if (y < 24) hw = 22;
         else             hw = 22 - (y - 24) * 2;
@@ -215,6 +216,20 @@ static void build_boss(u8 *dst, u8 kind)
     for (x = 8; x < 40; x++)
         if (dst[21 * SH_BOSS_W + x]) dst[21 * SH_BOSS_W + x] = (u8)(PAL_GLOW + 8);
     for (y = 12; y < 20; y++) for (x = 20; x < 28; x++) dst[y * SH_BOSS_W + x] = core;
+    if (kind == 3) {
+        for (y = 5; y < 29; y++) {
+            dst[y * SH_BOSS_W + 23] = C_WHITE;
+            dst[y * SH_BOSS_W + 24] = C_WHITE;
+        }
+        for (x = 8; x < 40; x += 3) {
+            dst[8 * SH_BOSS_W + x] = PAL_GLOW + 12;
+            dst[26 * SH_BOSS_W + x] = PAL_GLOW + 10;
+        }
+        for (y = 10; y < 24; y++) {
+            dst[y * SH_BOSS_W + 9] = edge;
+            dst[y * SH_BOSS_W + 38] = edge;
+        }
+    }
     for (y = 24; y < 30; y++) {
         dst[y * SH_BOSS_W + 14] = PAL_FIRE + 10; dst[y * SH_BOSS_W + 15] = PAL_FIRE + 10;
         dst[y * SH_BOSS_W + 32] = PAL_FIRE + 10; dst[y * SH_BOSS_W + 33] = PAL_FIRE + 10;
@@ -307,6 +322,7 @@ void sprites_init(void)
     build_boss(spr_boss[0], 0);
     build_boss(spr_boss[1], 1);
     build_boss(spr_boss[2], 2);
+    build_boss(spr_boss[3], 3);
     rom_font = get_rom8x8();
 }
 

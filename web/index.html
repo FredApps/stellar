@@ -137,12 +137,19 @@
     #wrap { inset: 0 166px 0 0; }
     #touchControls {
       left: auto; right: 8px; top: 8px; bottom: 8px; width: 146px;
+      display: grid;
       grid-template-columns: 1fr;
       align-content: center;
+      gap: 5px;
     }
-    #touchControls button { min-height: 34px; font-size: 11px; }
-    #touchControls .compact { font-size: 10px; }
+    #touchControls button { min-height: 30px; font-size: 10px; padding: 0 3px; }
+    #touchControls .compact { font-size: 9px; }
     #nameInput { left: calc((100vw - 166px) / 2); bottom: 10px; height: 30px; font-size: 18px; }
+  }
+  @media (orientation: landscape) and (max-height: 380px) {
+    #touchControls { gap: 4px; }
+    #touchControls button { min-height: 27px; font-size: 9px; }
+    #touchControls .compact { font-size: 8px; }
   }
   @keyframes blink { 50% { opacity: 0; } }
 </style>
