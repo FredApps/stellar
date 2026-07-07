@@ -10,6 +10,7 @@ int  vga_init(void);          /* set mode 13h, alloc buffers; 0 = ok */
 void vga_shutdown(void);      /* restore text mode, free buffers     */
 void vga_present(void);       /* wait vsync, blit back buffer -> VGA */
 void vga_present_paced(void); /* present, then skip one retrace      */
+void vga_blit_novsync(void);  /* blit without vsync (benchmark only)  */
 void vga_wait_vsync(void);
 
 /* copy background into back buffer with vertical wrap offset (scroll) */

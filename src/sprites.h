@@ -19,8 +19,10 @@
 #define SH_MSL_W   5
 #define SH_MSL_H  10
 
+#define NSTAGE 4                     /* enemy skins, one per 4-wave block */
+
 extern u8 spr_ship[3][SH_SHIP_W * SH_SHIP_H];      /* left / straight / right */
-extern u8 spr_enemy[3][SH_EN_W * SH_EN_H];   /* scout, weaver, shooter */
+extern u8 spr_enemy[NSTAGE][3][SH_EN_W * SH_EN_H]; /* [stage][scout/weaver/shooter] */
 extern u8 spr_pbullet[3][SH_PB_W * SH_PB_H]; /* cannon / laser / wave  */
 extern u8 spr_ebullet[SH_EB_W * SH_EB_H];
 extern u8 spr_powerup[PU_COUNT][SH_PU_W * SH_PU_H];

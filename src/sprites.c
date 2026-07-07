@@ -4,7 +4,7 @@
 #include "vga.h"
 
 u8 spr_ship[3][SH_SHIP_W * SH_SHIP_H];
-u8 spr_enemy[3][SH_EN_W * SH_EN_H];
+u8 spr_enemy[NSTAGE][3][SH_EN_W * SH_EN_H];
 u8 spr_pbullet[3][SH_PB_W * SH_PB_H];
 u8 spr_ebullet[SH_EB_W * SH_EB_H];
 u8 spr_powerup[PU_COUNT][SH_PU_W * SH_PU_H];
@@ -255,12 +255,41 @@ static void make_banked_ships(void)
     }
 }
 
+/* per-stage enemy skins: keep the type's body hue (so scout/weaver/shooter
+   stay readable) but retint the outline + glow and stamp escalating accent
+   pixels (nubs -> fins -> spikes) so each 4-wave block looks distinct. Stage 0
+   is the untouched original. Themes track the nebula: violet / teal / ember. */
+static const u8 stage_trim[NSTAGE]   = { C_DGRAY, C_MAGENTA, C_CYAN, PAL_FIRE + 8 };
+static const u8 stage_glow[NSTAGE]   = { PAL_GLOW + 10, C_LMAG, C_LCYAN, PAL_FIRE + 12 };
+static const u8 stage_accent[NSTAGE] = { PAL_GLOW + 12, C_LMAG, C_LCYAN, PAL_FIRE + 13 };
+
+static void build_enemy_stage(u8 *dst, const char *rows[], u8 stage)
+{
+    i16 i;
+    u8 trim = stage_trim[stage], glow = stage_glow[stage], acc = stage_accent[stage];
+    build(dst, SH_EN_W, SH_EN_H, rows);
+    if (stage == 0) return;                       /* original look */
+    for (i = 0; i < SH_EN_W * SH_EN_H; i++) {     /* retint outline + glow */
+        u8 c = dst[i];
+        if (c == C_DGRAY) dst[i] = trim;
+        else if (c >= PAL_GLOW && c < PAL_GLOW + 16) dst[i] = glow;
+    }
+#define EP(x,y) dst[(y) * SH_EN_W + (x)] = acc
+    if (stage >= 1) { EP(2,7); EP(13,7); }                    /* side nubs  */
+    if (stage >= 2) { EP(1,6); EP(14,6); EP(1,8); EP(14,8); } /* side fins  */
+    if (stage >= 3) { EP(3,0); EP(12,0); EP(2,1); EP(13,1); } /* top spikes */
+#undef EP
+}
+
 void sprites_init(void)
 {
+    int s;
     make_banked_ships();
-    build(spr_enemy[E_SCOUT],   SH_EN_W, SH_EN_H, SCOUT);
-    build(spr_enemy[E_WEAVER],  SH_EN_W, SH_EN_H, WEAVER);
-    build(spr_enemy[E_SHOOTER], SH_EN_W, SH_EN_H, SHOOTER);
+    for (s = 0; s < NSTAGE; s++) {
+        build_enemy_stage(spr_enemy[s][E_SCOUT],   SCOUT,   (u8)s);
+        build_enemy_stage(spr_enemy[s][E_WEAVER],  WEAVER,  (u8)s);
+        build_enemy_stage(spr_enemy[s][E_SHOOTER], SHOOTER, (u8)s);
+    }
     build(spr_pbullet[WT_CANNON], SH_PB_W, SH_PB_H, PBULLET);
     build_pbul(spr_pbullet[WT_LASER], C_LCYAN, C_WHITE);
     build_pbul(spr_pbullet[WT_WAVE],  C_LMAG,  C_WHITE);
@@ -287,10 +316,28 @@ void text_draw(i16 x, i16 y, const char *s, u8 col)
         const u8 __far *g = rom_font + (u16)(u8)(*s) * 8;
         i16 r, b;
         if (*s == ' ') continue;
-        for (r = 0; r < 8; r++) {
-            u8 bits = g[r];
-            for (b = 0; b < 8; b++)
-                if (bits & (0x80 >> b)) vga_pixel(x + b, y + r, col);
+        /* fast path: whole glyph on-screen -> write rows unrolled, no per-
+           pixel clipping (this is the hot cost on the help/score screens). */
+        if ((u16)x <= SCRW - 8 && (u16)y <= SCRH - 8) {
+            u8 __far *p = g_back + (u16)y * SCRW + (u16)x;
+            for (r = 0; r < 8; r++, p += SCRW) {
+                u8 bits = g[r];
+                if (!bits) continue;
+                if (bits & 0x80) p[0] = col;
+                if (bits & 0x40) p[1] = col;
+                if (bits & 0x20) p[2] = col;
+                if (bits & 0x10) p[3] = col;
+                if (bits & 0x08) p[4] = col;
+                if (bits & 0x04) p[5] = col;
+                if (bits & 0x02) p[6] = col;
+                if (bits & 0x01) p[7] = col;
+            }
+        } else {                                  /* clipped path */
+            for (r = 0; r < 8; r++) {
+                u8 bits = g[r];
+                for (b = 0; b < 8; b++)
+                    if (bits & (0x80 >> b)) vga_pixel(x + b, y + r, col);
+            }
         }
     }
 }

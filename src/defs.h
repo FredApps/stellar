@@ -69,8 +69,7 @@ typedef unsigned char  bool;
 #define WT_CANNON   0   /* spread bullets (default)          */
 #define WT_LASER    1   /* fast piercing beams               */
 #define WT_WAVE     2   /* wide slow arc                     */
-#define WT_WAVELASER 3  /* wide arc of piercing beams (fused)*/
-#define WT_COUNT    4
+#define WT_COUNT    3
 
 /* difficulty */
 #define DIF_EASY   0
@@ -143,6 +142,7 @@ typedef struct {
     i16 invuln;          /* i-frames after hit              */
     i16 firecd;
     i16 rapid;           /* frames of rapid-fire left       */
+    i16 wave_boost;      /* frames of wave-gun boost left   */
     i16 boost;           /* boost energy bar                */
     i16 boost_cd;        /* recharge delay after boosting   */
     i16 combo;           /* current kill combo              */

@@ -28,6 +28,9 @@ static struct {
     u8   kind;               /* 0 dreadnought, 1 warship, 2 hive */
     u8   phase;              /* 0 full, 1 <66%, 2 <33% (enraged) */
     u8   last_phase, summons;
+    u8   atk;                /* current attack pattern within the kind */
+    i16  atk_t;              /* frames until the next pattern switch    */
+    i16  spin;              /* rotating-spiral angle (sintab index)    */
 } boss;
 
 /* expanding-ring explosion animation */
@@ -250,7 +253,7 @@ static void reset_game(void)
     player.gun = GUN_MIN; player.wtype = WT_CANNON;
     player.msl = 5; player.bombs = (g_diff == DIF_HARD) ? 1 : 2;
     player.shield = (g_diff == DIF_EASY) ? 200 : 0;   /* easy: brief invuln head-start */
-    player.invuln = 0; player.firecd = 0; player.rapid = 0;
+    player.invuln = 0; player.firecd = 0; player.rapid = 0; player.wave_boost = 0;
     player.boost = BOOST_MAX; player.boost_cd = 0; player.boosting = FALSE;
     player.combo = 0; player.combo_t = 0; player.max_combo = 0; player.alive = TRUE;
     score = 0; wave = 0; flash = 0; shk = 0;
@@ -319,6 +322,7 @@ static void start_wave(void)
         boss.active = TRUE; boss.entering = TRUE;
         boss.kind = boss_order[boss_index % 3];
         boss.phase = 0; boss.last_phase = 0; boss.summons = 0;
+        boss.atk = 0; boss.atk_t = 150; boss.spin = 0;
         boss.x = SCRW / 2 - SH_BOSS_W / 2; boss.y = -SH_BOSS_H;
         boss.maxhp = boss.hp = 36 + wave * diff_boss_hp_mul() + boss_index * 8;
         boss.dir = 1; boss.t = 0; boss.firecd = 60; boss.charge = 0;
@@ -453,17 +457,18 @@ static void player_fire(void)
                       add_pbullet(cx + 6, cy, 0, -12, WT_LASER); }
         cd = 7;
         break;
-    case WT_WAVE: {                               /* wide, slow arc */
+    case WT_WAVE: {
         i16 spread = g + 1, k;
-        for (k = -spread; k <= spread; k++)
-            add_pbullet(cx + k * 3, cy, k, -5, WT_WAVE);
-        cd = 15;
-        break; }
-    case WT_WAVELASER: {                          /* wide arc of piercing beams */
-        i16 spread = g + 1, k;
-        for (k = -spread; k <= spread; k++)
-            add_pbullet(cx + k * 3, cy - 2, k, -10, WT_LASER);
-        cd = 11;
+        if (player.wave_boost > 0) {              /* boosted: piercing beams + centre lane */
+            for (k = -spread; k <= spread; k++)
+                add_pbullet(cx + k * 2, cy - 2, k, -8, WT_LASER);
+            add_pbullet(cx, cy - 4, 0, -11, WT_LASER);   /* extra fast centre lane */
+            cd = 11;
+        } else {                                  /* base: narrower slow arc */
+            for (k = -spread; k <= spread; k++)
+                add_pbullet(cx + k * 2, cy, k, -5, WT_WAVE);
+            cd = 15;
+        }
         break; }
     default:                                      /* WT_CANNON */
         switch (g) {
@@ -517,45 +522,70 @@ static void add_ebullet(i16 x, i16 y, i16 dx, i16 dy)
     b->kind = 0; b->grazed = 0; b->dmg = 1;
 }
 
-/* boss attack varies by kind and enrage phase */
+/* Boss attacks: each kind cycles through 3 distinct patterns (boss.atk),
+   intensified by the enrage phase. Volleys stay small (<= ~7 bullets) so the
+   variety comes from pattern shape, not raw bullet count. */
 static void boss_fire(void)
 {
     i16 bx = boss.x + SH_BOSS_W / 2, by = boss.y + SH_BOSS_H - 6;
+    i16 dir = (player.x + 8 > bx) ? 1 : -1;
+    u8  hard = (g_diff == DIF_HARD);
     i16 k;
     switch (boss.kind) {
-    case 1:                                   /* warship: aimed twin bursts */
-        { i16 dir = (player.x + 8 > bx) ? 1 : -1;
-          add_ebullet(bx - 8, by, dir, 3); add_ebullet(bx + 8, by, dir, 3);
-          add_ebullet(bx, by, 0, 4);
-          if (g_diff != DIF_EASY && boss.phase >= 1) add_ebullet(bx, by, dir * 2, 3);
-          if (g_diff == DIF_HARD && boss.phase >= 1) {
-              add_ebullet(bx - 18, by - 2, -2, 3);
-              add_ebullet(bx + 18, by - 2,  2, 3);
-          } }
-        break;
-    case 2:                                   /* hive: radial ring */
-        if (g_diff == DIF_EASY) {
-            for (k = -2; k <= 2; k++) add_ebullet(bx, by, k, 3);
-        } else if (g_diff == DIF_HARD) {
-            for (k = -4; k <= 4; k++) add_ebullet(bx, by, k, 3);
-            if (boss.phase >= 1) {
-                for (k = -2; k <= 2; k++) add_ebullet(bx, by, k * 2, 2);
-                add_ebullet(bx - 20, by - 4, 1, 4);
-                add_ebullet(bx + 20, by - 4, -1, 4);
-            }
-        } else {
-            for (k = -3; k <= 3; k++) add_ebullet(bx, by, k, 3);
-            if (boss.phase >= 1) for (k = -2; k <= 2; k++) add_ebullet(bx, by, k * 2, 2);
+    case 1:                                   /* ---- WARSHIP ---- */
+        switch (boss.atk) {
+        case 1:                               /* rapid straight barrage */
+            add_ebullet(bx - 6, by, 0, 5); add_ebullet(bx + 6, by, 0, 5);
+            if (boss.phase >= 1) add_ebullet(bx, by, 0, 6);
+            break;
+        case 2:                               /* V cross-shots */
+            add_ebullet(bx - 10, by, 2, 3);  add_ebullet(bx + 10, by, -2, 3);
+            add_ebullet(bx - 4, by, 1, 4);   add_ebullet(bx + 4, by, -1, 4);
+            if (hard && boss.phase >= 1) add_ebullet(bx, by, 0, 4);
+            break;
+        default:                              /* aimed twin bursts */
+            add_ebullet(bx - 8, by, dir, 3); add_ebullet(bx + 8, by, dir, 3);
+            add_ebullet(bx, by, 0, 4);
+            if (g_diff != DIF_EASY && boss.phase >= 1) add_ebullet(bx, by, dir * 2, 3);
+            break;
         }
         break;
-    default:                                  /* dreadnought: sweeping fan */
-        if (g_diff == DIF_EASY) {
-            for (k = -1; k <= 1; k++) add_ebullet(bx, by, k, 3);
-            if (boss.phase >= 2) add_ebullet(bx, by, 0, 5);
-        } else {
+    case 2:                                   /* ---- HIVE ---- */
+        switch (boss.atk) {
+        case 1:                               /* rotating spiral */
+            { i16 a, arms = (boss.phase >= 1) ? 3 : 2;
+              for (a = 0; a < arms; a++) {
+                  i16 ang = (i16)((boss.spin + a * 21) & 63);
+                  add_ebullet(bx, by, sintab[ang] / 12,
+                              (i16)(2 + (sintab[(ang + 16) & 63] > 0 ? 2 : 1)));
+              }
+              boss.spin = (i16)((boss.spin + 5) & 63); }
+            break;
+        case 2:                               /* targeted cluster */
+            add_ebullet(bx, by, dir, 3); add_ebullet(bx - 3, by, dir, 4);
+            add_ebullet(bx + 3, by, dir, 4);
+            if (boss.phase >= 1) add_ebullet(bx, by, dir * 2, 3);
+            break;
+        default:                              /* radial ring */
+            for (k = (hard ? -3 : -2); k <= (hard ? 3 : 2); k++) add_ebullet(bx, by, k, 3);
+            break;
+        }
+        break;
+    default:                                  /* ---- DREADNOUGHT ---- */
+        switch (boss.atk) {
+        case 1:                               /* wall with a dodge gap under the player */
+            { i16 pc = (i16)((player.x + 8 - (bx - 30)) / 10);
+              for (k = -3; k <= 3; k++)
+                  if (k != pc && k != pc - 1) add_ebullet(bx + k * 10, by, 0, 3); }
+            break;
+        case 2:                               /* aimed burst + flank */
+            add_ebullet(bx, by, dir, 4); add_ebullet(bx, by, 0, 4);
+            add_ebullet(bx - 12, by, -1, 3); add_ebullet(bx + 12, by, 1, 3);
+            break;
+        default:                              /* sweeping fan */
             for (k = -2; k <= 2; k++) add_ebullet(bx, by, k, 3);
-            if ((g_diff == DIF_HARD && boss.phase >= 1) || boss.phase >= 2)
-                for (k = -2; k <= 2; k++) add_ebullet(bx, by, k, 5);
+            if (boss.phase >= 2) add_ebullet(bx, by, 0, 5);
+            break;
         }
         break;
     }
@@ -605,12 +635,11 @@ static void apply_powerup(u8 type)
         case PU_SHIELD:  player.shield = 350; break;   /* ~10 s of invulnerability at 35 FPS */
         case PU_LIFE:    if (player.lives < 9) player.lives++; break;
         case PU_MISSILE: player.msl += 4; if (player.msl > 30) player.msl = 30; break;
-        /* Laser onto an existing Wave (or already fused) fuses into the
-           Wave-Laser: a wide arc of piercing beams, an upgrade over both. */
-        case PU_LASER:   player.wtype = (player.wtype == WT_WAVE || player.wtype == WT_WAVELASER)
-                                        ? WT_WAVELASER : WT_LASER; break;
-        case PU_WAVE:    player.wtype = (player.wtype == WT_LASER || player.wtype == WT_WAVELASER)
-                                        ? WT_WAVELASER : WT_WAVE; break;
+        /* Laser while flying the Wave gun doesn't swap weapons - it super-
+           charges the Wave for a while (piercing beams + a centre lane). */
+        case PU_LASER:   if (player.wtype == WT_WAVE) player.wave_boost = 350; /* ~10 s at 35 FPS */
+                         else player.wtype = WT_LASER; break;
+        case PU_WAVE:    player.wtype = WT_WAVE; break;
         case PU_BOMB:    if (player.bombs < 10) player.bombs++; break;
         case PU_SCORE:   score_add(500 + (u32)wave * 50UL); break;
     }
@@ -809,6 +838,7 @@ static void update_play(void)
         if (player.invuln > 0) player.invuln--;
         if (player.shield > 0) player.shield--;
         if (player.rapid  > 0) player.rapid--;
+        if (player.wave_boost > 0) player.wave_boost--;
         if (player.combo_t > 0) { if (--player.combo_t == 0) player.combo = 0; }
         if (wave_banner > 0) wave_banner--;
     }
@@ -916,9 +946,14 @@ static void update_play(void)
         /* collide with player bullets (laser pierces: doesn't despawn) */
         {
             int j;
-            for (j = 0; j < MAX_PBULLET; j++) if (pbul[j].active &&
-                overlap(pbul[j].x, pbul[j].y, SH_PB_W, SH_PB_H,
-                        e->x + 2, e->y, SH_EN_W - 4, SH_EN_H)) {
+            i16 ey0 = e->y, ey1 = e->y + SH_EN_H;
+            for (j = 0; j < MAX_PBULLET; j++) {
+                if (!pbul[j].active) continue;
+                /* cheap y-band reject before the full box test (most bullets
+                   are nowhere near this enemy's row) */
+                if (pbul[j].y >= ey1 || pbul[j].y + SH_PB_H <= ey0) continue;
+                if (!overlap(pbul[j].x, pbul[j].y, SH_PB_W, SH_PB_H,
+                             e->x + 2, e->y, SH_EN_W - 4, SH_EN_H)) continue;
                 if (pbul[j].kind != WT_LASER) pbul[j].active = FALSE;
                 burst(pbul[j].x, pbul[j].y, 3, C_WHITE, C_YELLOW);
                 e->hp -= pbul[j].dmg;
@@ -942,6 +977,11 @@ static void update_play(void)
         }
         boss.t++;
         if (boss.charge > 0) boss.charge--;
+        /* cycle attack pattern; switch faster when enraged */
+        if (--boss.atk_t <= 0) {
+            boss.atk = (u8)((boss.atk + 1) % 3);
+            boss.atk_t = (i16)(150 - boss.phase * 35);
+        }
         /* phase from remaining HP */
         boss.phase = (boss.hp * 3 <= boss.maxhp) ? 2 : (boss.hp * 3 <= boss.maxhp * 2) ? 1 : 0;
         if (boss.phase != boss.last_phase) {
@@ -1020,7 +1060,7 @@ static void draw_dust(void)
     }
 }
 
-static const char *WNAME[WT_COUNT] = { "CANNON", "LASER", "WAVE", "WVLAS" };
+static const char *WNAME[WT_COUNT] = { "CANNON", "LASER", "WAVE" };
 static const char *BOSSNAME[3] = { "DREADNOUGHT", "WARSHIP", "HIVE" };
 
 static void draw_hud(void)
@@ -1037,10 +1077,14 @@ static void draw_hud(void)
     /* bottom row: ships / weapon+gun / missiles / bombs */
     sprintf(buf, "SH%d", player.lives);
     text_draw(4, 190, buf, C_LGREEN);
-    sprintf(buf, "%s%d", WNAME[player.wtype], player.gun);
+    /* wave gun shows a "*" while its laser boost is active */
+    if (player.wtype == WT_WAVE && player.wave_boost > 0)
+        sprintf(buf, "WAVE*%d", player.gun);
+    else
+        sprintf(buf, "%s%d", WNAME[player.wtype], player.gun);
     text_draw(36, 190, buf, (player.wtype == WT_LASER) ? C_LCYAN
-                          : (player.wtype == WT_WAVE) ? C_LMAG
-                          : (player.wtype == WT_WAVELASER) ? C_WHITE : (u8)(PAL_FIRE + 11));
+                          : (player.wtype == WT_WAVE) ? (player.wave_boost > 0 ? C_WHITE : C_LMAG)
+                          : (u8)(PAL_FIRE + 11));
     sprintf(buf, "M%02d", player.msl);
     text_draw(124, 190, buf, C_LGRAY);
     sprintf(buf, "B%02d", player.bombs);
@@ -1117,10 +1161,13 @@ static void draw_play(void)
             text_draw(powr[i].x + 2 + shx, powr[i].y + 2 + bob + shy, s, C_BLACK);
         }
     }
-    for (i = 0; i < MAX_ENEMY; i++) if (enemy[i].active) {
-        draw_enemy_anim(&enemy[i]);
-        DS(enemy[i].x, enemy[i].y, SH_EN_W, SH_EN_H, spr_enemy[enemy[i].type]);
-        draw_elite_overlay(&enemy[i]);
+    {
+        u8 estage = (wave > 0) ? (u8)(((wave - 1) / 4) & 3) : 0;   /* skin per 4-wave block */
+        for (i = 0; i < MAX_ENEMY; i++) if (enemy[i].active) {
+            draw_enemy_anim(&enemy[i]);
+            DS(enemy[i].x, enemy[i].y, SH_EN_W, SH_EN_H, spr_enemy[estage][enemy[i].type]);
+            draw_elite_overlay(&enemy[i]);
+        }
     }
     if (boss.active) {
         DS(boss.x, boss.y, SH_BOSS_W, SH_BOSS_H, spr_boss[boss.kind]);
@@ -1217,7 +1264,7 @@ static void draw_title(void)
         text_center(136, "GRAZE FOR BONUS", C_LCYAN);
     }
     if (fx < SCRW) vga_sprite(fx, 166, SH_SHIP_W, SH_SHIP_H, spr_ship[1]);
-    if (fx > 40 && fx < SCRW + 40) vga_sprite(SCRW - fx, 20, SH_EN_W, SH_EN_H, spr_enemy[(frame / 70) % 3]);
+    if (fx > 40 && fx < SCRW + 40) vga_sprite(SCRW - fx, 20, SH_EN_W, SH_EN_H, spr_enemy[0][(frame / 70) % 3]);
 }
 
 /* ---------------- game over ---------------- */
@@ -1239,40 +1286,47 @@ static void draw_over(void)
 /* ---------------- instruction menu ---------------- */
 static i16 help_page = 0;
 
+/* letter identifying each pickup gem (index = PU_* type) */
+static const char PU_LETTER[PU_COUNT + 1] = "GRHLMZWB$";
+
 static void help_row(i16 y, u8 pu, const char *txt)
 {
+    char s[2];
     vga_sprite(52, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
-    text_draw(72, y + 2, txt, C_LGRAY);
+    s[0] = PU_LETTER[pu]; s[1] = 0;
+    text_draw(54, y + 2, s, C_BLACK);        /* gem's identifying letter */
+    text_draw(70, y + 2, txt, C_LGRAY);
 }
 
 static void draw_help(void)
 {
     if (help_page == 0) {
         text_center(8, "PICKUPS", C_YELLOW);
-        help_row( 24, PU_GUN,     "GUN +1 LEVEL. -1 WHEN YOU DIE");
-        help_row( 40, PU_RAPID,   "RAPID FIRE FOR A WHILE");
+        help_row( 24, PU_GUN,     "GUN: +1 LEVEL (LOSE 1 ON DEATH)");
+        help_row( 40, PU_RAPID,   "RAPID: FASTER FIRE, TIMED");
         help_row( 56, PU_SHIELD,  "SHIELD: 10 SEC INVULNERABLE");
-        help_row( 72, PU_LIFE,    "EXTRA SHIP");
-        help_row( 88, PU_MISSILE, "+4 MISSILES (MAX 30)");
-        help_row(104, PU_LASER,   "LASER GUN: FAST, PIERCES");
-        help_row(120, PU_WAVE,    "WAVE GUN: WIDE ARC");
-        help_row(136, PU_BOMB,    "+1 SMART BOMB (MAX 10)");
+        help_row( 72, PU_LIFE,    "LIFE: EXTRA SHIP");
+        help_row( 88, PU_MISSILE, "MISSILES: +4 AMMO (MAX 30)");
+        help_row(104, PU_LASER,   "LASER: FAST PIERCING GUN");
+        help_row(120, PU_WAVE,    "WAVE: WIDE ARC GUN");
+        help_row(136, PU_BOMB,    "BOMB: +1 SMART BOMB (MAX 10)");
         help_row(152, PU_SCORE,   "SCORE GEM: RISKY BONUS");
         text_center(176, "SPACE NEXT PAGE   ESC BACK", C_LCYAN);
     } else {
         text_center(8, "COMBAT MANUAL", C_YELLOW);
-        text_draw(28,  26, "SPACE  FIRE. GUN LEVELS 1-4", C_LGRAY);
-        text_draw(28,  40, "       WIDEN YOUR PATTERN", C_DGRAY);
-        vga_sprite(32, 54, SH_MSL_W, SH_MSL_H, spr_missile);
-        text_draw(44,  56, "CTRL  HOMING MISSILE, BIG", C_LGRAY);
-        text_draw(44,  68, "      BLAST. BEST VS BOSSES", C_DGRAY);
-        text_draw(28,  86, "B     SMART BOMB: CLEARS ENEMY", C_LGRAY);
-        text_draw(28,  98, "      SHOTS, HURTS EVERYTHING", C_DGRAY);
-        text_draw(28, 114, "SHIFT BOOST: SHORT SPEED BURST", C_LGRAY);
-        text_draw(28, 130, "COMBO FAST KILLS MULTIPLY SCORE", C_LGRAY);
-        text_draw(28, 142, "      UP TO X5. DYING RESETS IT", C_DGRAY);
-        text_draw(28, 158, "GRAZE NEAR-MISS SHOTS FOR BONUS", C_LGRAY);
-        text_center(180, "SPACE FIRST PAGE   ESC BACK", C_LCYAN);
+        text_draw(24,  24, "SPACE  FIRE MAIN WEAPON", C_LGRAY);
+        text_draw(24,  36, "       GUN 1-4 WIDENS FIRE", C_DGRAY);
+        text_draw(24,  52, "WAVE + LASER PICKUP GIVES", C_LMAG);
+        text_draw(24,  64, "       A 10 SEC PIERCE BOOST", C_DGRAY);
+        vga_sprite(28, 78, SH_MSL_W, SH_MSL_H, spr_missile);
+        text_draw(40,  80, "CTRL   MISSILE: BIG BLAST,", C_LGRAY);
+        text_draw(40,  92, "       BEST AGAINST BOSSES", C_DGRAY);
+        text_draw(24, 108, "B      BOMB: CLEAR SHOTS,", C_LGRAY);
+        text_draw(24, 120, "       DAMAGE EVERYTHING", C_DGRAY);
+        text_draw(24, 136, "SHIFT  BOOST: SPEED BURST", C_LGRAY);
+        text_draw(24, 152, "FAST KILLS COMBO UP TO X5", C_LGRAY);
+        text_draw(24, 164, "GRAZE SHOTS FOR BONUS POINTS", C_DGRAY);
+        text_center(182, "SPACE PICKUPS   ESC BACK", C_LCYAN);
     }
 }
 
@@ -1299,6 +1353,7 @@ void game_run(void)
     int entry_rank = -1;
     char name[NAME_LEN + 1]; int nlen = 0;
     bool paused = FALSE;
+    int prev_state = -1, prev_help = -1; u8 prev_blink = 2;
 
     hi_load();
     init_stars();
@@ -1376,40 +1431,61 @@ void game_run(void)
             break;
         }
 
-        /* ---- render ---- */
-        if (flash > 0) vga_clear(C_RED);
-        else vga_bg_blit((u16)((frame >> 1) % SCRH));   /* scrolling nebula */
-        draw_stars();
-        draw_dust();
-        switch (state) {
-        case ST_TITLE:  draw_title(); break;
-        case ST_HELP:   draw_help(); break;
-        case ST_PLAY:   draw_play();
-                        if (paused) text_center(96, "PAUSED", C_WHITE);
-                        break;
-        case ST_OVER:   draw_over(); break;
-        case ST_SCORES: draw_scores(); break;
-        case ST_ENTRY: {
-            char b[32];
-            text_center(60, "NEW HIGH SCORE!", C_YELLOW);
-            sprintf(b, "SCORE %06lu", score);
-            text_center(80, b, C_WHITE);
-            text_center(108, "ENTER NAME:", C_LCYAN);
-            {
-                char nb[16]; sprintf(nb, "%s%s", name, (frame & 8) ? "_" : " ");
-                text_center(124, nb, C_WHITE);
-            }
-            text_center(150, "TYPE THEN PRESS ENTER", C_LGRAY);
-            text_center(164, "ESC SAVES + REPLAYS", C_DGRAY);
-            break; }
-        }
-        if (snd_muted()) text_draw(SCRW - 40, 190, "MUTE", C_LRED);
+        /* keep music/sfx running every frame regardless of what we draw */
+        if (!paused || state != ST_PLAY) snd_update();
 
-        if (!paused || state != ST_PLAY) {
-            if ((frame & 3) == 0) vga_cycle_palette();
-            snd_update();
+        /* ---- render (static menus only redraw when they change) ---- */
+        {
+            u8 blink = (u8)((frame >> 3) & 1);
+            bool render;
+            switch (state) {
+            case ST_HELP:   render = (state != prev_state) || (help_page != prev_help); break;
+            case ST_SCORES: render = (state != prev_state) || (blink != prev_blink);    break;
+            default:        render = TRUE; break;   /* animated / interactive screens */
+            }
+            prev_state = state; prev_help = help_page; prev_blink = blink;
+
+            if (!render) {
+                /* nothing changed - hold the last frame, just pace the loop */
+                vga_wait_vsync(); vga_wait_vsync();
+                continue;
+            }
+
+            if (flash > 0) vga_clear(C_RED);
+            else if (state == ST_HELP || state == ST_SCORES) vga_bg_blit(0); /* static bg */
+            else vga_bg_blit((u16)((frame >> 1) % SCRH));                    /* scrolling  */
+            draw_stars();
+            draw_dust();
+            switch (state) {
+            case ST_TITLE:  draw_title(); break;
+            case ST_HELP:   draw_help(); break;
+            case ST_PLAY:   draw_play();
+                            if (paused) text_center(96, "PAUSED", C_WHITE);
+                            break;
+            case ST_OVER:   draw_over(); break;
+            case ST_SCORES: draw_scores(); break;
+            case ST_ENTRY: {
+                char b[32];
+                text_center(60, "NEW HIGH SCORE!", C_YELLOW);
+                sprintf(b, "SCORE %06lu", score);
+                text_center(80, b, C_WHITE);
+                text_center(108, "ENTER NAME:", C_LCYAN);
+                {
+                    char nb[16]; sprintf(nb, "%s%s", name, (frame & 8) ? "_" : " ");
+                    text_center(124, nb, C_WHITE);
+                }
+                text_center(150, "TYPE THEN PRESS ENTER", C_LGRAY);
+                text_center(164, "ESC SAVES + REPLAYS", C_DGRAY);
+                break; }
+            }
+            if (snd_muted()) text_draw(SCRW - 40, 190, "MUTE", C_LRED);
+
+            /* animate the palette only on the live screens, less often */
+            if ((state == ST_PLAY || state == ST_TITLE) && !(paused && state == ST_PLAY)
+                && (frame & 7) == 0)
+                vga_cycle_palette();
+            vga_present_paced();
         }
-        vga_present_paced();
     }
     snd_music_stop();
     snd_silence();
@@ -1428,7 +1504,7 @@ void game_selftest(const char *bmp)
     vga_set_theme(2);
     /* hand-place a representative scene */
     player.x = 150; player.y = 150; player.shield = 300; player.gun = 3;
-    player.wtype = WT_LASER; player.msl = 12; player.bombs = 3;
+    player.wtype = WT_WAVE; player.wave_boost = 200; player.msl = 12; player.bombs = 3;
     player.boost = 82; player.boost_cd = 12; player.boosting = TRUE;
     player.combo = 12; player.combo_t = 100; player.max_combo = 18; ship_bank = 2;
     wave_banner = 80;
@@ -1483,26 +1559,52 @@ void game_selftest_title(const char *bmp)
    ~10 s of wall clock (measured via the 18.2 Hz BIOS tick at 0040:006C, which
    DOSBox keeps synced to real time) and record the achieved frame count. This
    is the actual on-screen speed the game runs at. */
-void game_bench(void)
+static void bench_write(const char *tag, u32 frames, u32 ticks)
+{
+    FILE *f = fopen("BENCH.TXT", "a");
+    if (f) { fprintf(f, "%s frames %lu ticks %lu\n", tag, frames, ticks); fclose(f); }
+}
+
+/* Measure raw per-frame throughput (unpaced present, capped only by 70 Hz
+   vsync) so before/after optimisation shows compute headroom, not the 35 Hz
+   gameplay cap. scene 0 = a sustained boss fight, scene 1 = the help screen. */
+void game_bench(int scene)
 {
     u32 __far *bios = (u32 __far *)MKFP(0x0040, 0x006C);
     u32 t0, tnow, frames = 0;
-    FILE *f;
     hi_load(); init_stars(); init_dust(); gen_nebula();
-    reset_game(); wave = 7; start_wave();          /* wave 8 = a busy boss scene */
+    reset_game();
+
+    if (scene == 1) {                              /* --- help screen --- */
+        help_page = 0; vga_set_theme(0);
+        t0 = *bios;
+        while (((tnow = *bios) - t0) < 182UL) {
+            update_stars(); update_dust();
+            vga_bg_blit((u16)((frame >> 1) % SCRH));
+            draw_stars(); draw_dust(); draw_help();
+            if ((frame & 3) == 0) vga_cycle_palette();
+            frame++; frames++;
+            vga_blit_novsync();
+        }
+        bench_write("help", frames, (u32)(tnow - t0));
+        return;
+    }
+
+    wave = 7; start_wave();                        /* --- wave 8 boss --- */
     t0 = *bios;
-    while (((tnow = *bios) - t0) < 182UL) {         /* 182 ticks ~= 10 s */
+    while (((tnow = *bios) - t0) < 182UL) {
         player.invuln = 10; player.alive = TRUE; player.lives = 9;
-        if ((frame % 5) == 0) player_fire();        /* representative bullet load */
+        if (boss.active) boss.hp = boss.maxhp;     /* keep the boss alive & firing */
+        if ((frame % 5) == 0) player_fire();
         update_play();
         if (flash > 0) vga_clear(C_RED);
         else vga_bg_blit((u16)((frame >> 1) % SCRH));
         draw_stars(); draw_dust(); draw_play();
+        if ((frame & 3) == 0) vga_cycle_palette();
         frame++; frames++;
-        vga_present_paced();
+        vga_blit_novsync();
     }
-    f = fopen("BENCH.TXT", "w");
-    if (f) { fprintf(f, "frames %lu ticks %lu\n", frames, (u32)(tnow - t0)); fclose(f); }
+    bench_write("boss", frames, (u32)(tnow - t0));
 }
 
 void game_selftest_help(const char *bmp, int page)
@@ -1517,5 +1619,23 @@ void game_selftest_help(const char *bmp, int page)
     draw_stars();
     draw_dust();
     draw_help();
+    bmp_dump(bmp);
+}
+
+/* per-stage enemy lineup: 4 stage skins (rows) x 3 types (cols) */
+void game_selftest_stages(const char *bmp)
+{
+    int s, t;
+    gen_nebula();
+    vga_set_theme(0);
+    vga_bg_blit(0);
+    text_center(4, "ENEMY STAGES", C_YELLOW);
+    for (s = 0; s < NSTAGE; s++) {
+        char lab[16];
+        sprintf(lab, "S%d", s + 1);
+        text_draw(6, 30 + s * 40, lab, C_LGRAY);
+        for (t = 0; t < 3; t++)
+            vga_sprite(60 + t * 70, 24 + s * 40, SH_EN_W, SH_EN_H, spr_enemy[s][t]);
+    }
     bmp_dump(bmp);
 }

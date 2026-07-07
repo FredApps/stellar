@@ -71,11 +71,12 @@ static void on_break(int sig) { (void)sig; exit(1); }
 
 int main(int argc, char **argv)
 {
-    bool shot = FALSE, bench = FALSE;
+    bool shot = FALSE, bench = FALSE; int bscene = 0;
     int i;
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "/shot") || !strcmp(argv[i], "-shot")) shot = TRUE;
         if (!strcmp(argv[i], "/bench")) bench = TRUE;
+        if (!strcmp(argv[i], "/benchhelp")) { bench = TRUE; bscene = 1; }
         if (!strcmp(argv[i], "/audiodump")) return audiodump();  /* no video */
     }
 
@@ -87,13 +88,14 @@ int main(int argc, char **argv)
     sprites_init();
     snd_init();
 
-    if (bench) { game_bench(); return 0; }
+    if (bench) { game_bench(bscene); return 0; }
 
     if (shot) {
         game_selftest_title("TITLE.BMP");
         game_selftest("FRAME.BMP");
         game_selftest_help("HELP1.BMP", 0);
         game_selftest_help("HELP2.BMP", 1);
+        game_selftest_stages("STAGES.BMP");
         return 0;                 /* cleanup() restores text mode */
     }
 

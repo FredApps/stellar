@@ -25,16 +25,20 @@ static u8 clamp63(i16 v)
 }
 
 /* custom ramps above the 16 standard colours (values are 6-bit, 0..63) */
-static void set_palette(void)
+static void pal_fire(void)
 {
     u8 i;
-    for (i = 0; i < 16; i++) {                       /* PAL_FIRE */
+    for (i = 0; i < 16; i++) {
         u8 flick = (u8)(((i + pal_phase) & 3) == 0 ? 3 : 0);
         pal_set(PAL_FIRE + i, clamp63(20 + i * 3 + flick),
                 clamp63((i < 5 ? 0 : (i - 5) * 6) + flick / 2),
                 clamp63(i < 11 ? 0 : (i - 11) * 12));
     }
-    for (i = 0; i < 16; i++) {                       /* PAL_NEB */
+}
+static void pal_neb(void)
+{
+    u8 i;
+    for (i = 0; i < 16; i++) {
         i16 r, g, b, pulse = ((i + pal_phase) & 7) == 0 ? 2 : 0;
         switch (pal_theme & 3) {
             default:
@@ -45,7 +49,11 @@ static void set_palette(void)
         }
         pal_set(PAL_NEB + i, clamp63(r + pulse), clamp63(g + pulse), clamp63(b + pulse));
     }
-    for (i = 0; i < 16; i++) {                       /* PAL_GLOW */
+}
+static void pal_glow(void)
+{
+    u8 i;
+    for (i = 0; i < 16; i++) {
         i16 r, g, b, pulse = (pal_phase & 1) ? 2 : 0;
         if ((pal_theme & 3) == 1)      { r = 8 + i * 2; g = i;         b = 12 + i * 3; }
         else if ((pal_theme & 3) == 2) { r = i / 4;     g = 10 + i*3;  b = 10 + i * 2; }
@@ -54,6 +62,7 @@ static void set_palette(void)
         pal_set(PAL_GLOW + i, clamp63(r + pulse), clamp63(g + pulse), clamp63(b + pulse));
     }
 }
+static void set_palette(void) { pal_fire(); pal_neb(); pal_glow(); }
 
 void vga_set_theme(u8 theme)
 {
@@ -61,10 +70,13 @@ void vga_set_theme(u8 theme)
     set_palette();
 }
 
+/* animation-only cycle: reprogram just the animated ramps (fire + glow),
+   skipping the ~static nebula ramp - halves the DAC port writes per cycle. */
 void vga_cycle_palette(void)
 {
     pal_phase = (u8)((pal_phase + 1) & 7);
-    set_palette();
+    pal_fire();
+    pal_glow();
 }
 
 int vga_init(void)
@@ -114,6 +126,13 @@ void vga_wait_vsync(void)
 void vga_present(void)
 {
     vga_wait_vsync();
+    _fmemcpy(vga_mem, g_back, SCRSZ);
+}
+
+/* blit with no vsync wait - used only by the benchmark to measure raw
+   per-frame throughput without quantising to 70/n Hz */
+void vga_blit_novsync(void)
+{
     _fmemcpy(vga_mem, g_back, SCRSZ);
 }
 
