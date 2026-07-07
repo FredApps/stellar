@@ -3,6 +3,13 @@
 All notable release changes are recorded here. GitHub release tags must have a
 matching section in this file.
 
+## v0.1.2 - 2026-07-07
+
+- Added distinct movement and attack identities for each native boss.
+- Added the wave 60 Overlord final boss, victory screen, freeplay continuation, and win theme.
+- Changed boss bomb and missile damage to scale by boss maximum health.
+- Mirrored the new boss campaign state in the browser port and deployed the updated web build.
+
 ## v0.1.1 - 2026-07-06
 
 - Added WASD movement controls in addition to arrow-key movement.
