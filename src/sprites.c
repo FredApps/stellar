@@ -8,7 +8,8 @@ u8 spr_enemy[NSTAGE][3][SH_EN_W * SH_EN_H];
 u8 spr_pbullet[3][SH_PB_W * SH_PB_H];
 u8 spr_ebullet[SH_EB_W * SH_EB_H];
 u8 spr_powerup[PU_COUNT][SH_PU_W * SH_PU_H];
-u8 spr_boss[NBOSS][SH_BOSS_W * SH_BOSS_H];
+u8 spr_boss[NBOSS][BOSS_MAXW * BOSS_MAXH];
+i16 spr_boss_w[NBOSS], spr_boss_h[NBOSS];
 u8 spr_missile[SH_MSL_W * SH_MSL_H];
 
 /* ---- ROM 8x8 font pointer (INT 10h AX=1130h BH=03h -> ES:BP) ---- */
@@ -186,54 +187,127 @@ static void build_pu(u8 *dst, u8 fill)
         }
 }
 
-/* boss kinds: 0 grey dreadnought, 1 red warship, 2 green hive, 3 final core */
-static void build_boss(u8 *dst, u8 kind)
+/* --- tiny tightly-packed (stride = w) sprite primitives for the bosses --- */
+static void bset(u8 *d, i16 w, i16 h, i16 x, i16 y, u8 c)
 {
-    i16 x, y, hw;
-    u8 hull = (kind == 1) ? C_LRED : (kind == 2) ? C_LGREEN : (kind == 3) ? C_LMAG : C_LGRAY;
-    u8 edge = (kind == 1) ? C_RED  : (kind == 2) ? C_GREEN  : (kind == 3) ? C_MAGENTA : C_DGRAY;
-    u8 core = (kind == 2 || kind == 3) ? (u8)(PAL_GLOW + 4) : (u8)(PAL_FIRE + 4);
-    memset(dst, 0, SH_BOSS_W * SH_BOSS_H);
-    for (y = 0; y < SH_BOSS_H; y++) {
-        if      (kind == 3) hw = (y < 6) ? 2 + y * 3 : (y < 18) ? 21 : (y < 27) ? 28 - y / 2 : 12;
-        else if (y < 4)  hw = (kind == 2) ? 8 : 4;      /* hive is wider up top */
-        else if (y < 10) hw = 6 + (y - 4) * 3;
-        else if (y < 24) hw = 22;
-        else             hw = 22 - (y - 24) * 2;
-        if (hw < 0) hw = 0;
-        for (x = 24 - hw; x <= 24 + hw; x++) {
-            u8 c = hull;
-            if (x < 24 - hw + 2 || x > 24 + hw - 2) c = edge;
-            dst[y * SH_BOSS_W + x] = c;
+    if ((u16)x < (u16)w && (u16)y < (u16)h) d[(i16)(y * w + x)] = c;
+}
+static void bhline(u8 *d, i16 w, i16 h, i16 x0, i16 x1, i16 y, u8 c)
+{
+    i16 x;
+    if (x0 < 0) x0 = 0;
+    if (x1 > w - 1) x1 = w - 1;
+    for (x = x0; x <= x1; x++) bset(d, w, h, x, y, c);
+}
+static void brect(u8 *d, i16 w, i16 h, i16 x0, i16 y0, i16 x1, i16 y1, u8 c)
+{
+    i16 y;
+    for (y = y0; y <= y1; y++) bhline(d, w, h, x0, x1, y, c);
+}
+
+/* Each roster slot has its own silhouette, footprint and palette so bosses
+   read as different ships, not recolours. dims returned via *ow/*oh. */
+static void build_boss(u8 *dst, u8 kind, i16 *ow, i16 *oh)
+{
+    i16 x, y, cx, w, h;
+    switch (kind) {
+
+    case 0: {   /* GORGON - wide low grey battle-slab, red core, gun ports */
+        w = 56; h = 28; cx = w / 2;
+        memset(dst, 0, w * h);
+        for (y = 0; y < h; y++) {
+            i16 half = (y < 4) ? 16 + y : (y < 22) ? 20 + (y >> 3) : 22 - (y - 22);
+            bhline(dst, w, h, cx - half, cx + half, y, C_LGRAY);
+            bset(dst, w, h, cx - half, y, C_DGRAY);
+            bset(dst, w, h, cx + half, y, C_DGRAY);
         }
-    }
-    for (y = 8; y < 16; y++) {
-        for (x = 1; x < 7; x++)  dst[y * SH_BOSS_W + x] = (x < 3) ? edge : hull;
-        for (x = 41; x < 47; x++) dst[y * SH_BOSS_W + x] = (x > 44) ? edge : hull;
-    }
-    for (x = 2; x < 6; x++)  dst[15 * SH_BOSS_W + x] = PAL_GLOW + 12;
-    for (x = 42; x < 46; x++) dst[15 * SH_BOSS_W + x] = PAL_GLOW + 12;
-    for (x = 8; x < 40; x++)
-        if (dst[21 * SH_BOSS_W + x]) dst[21 * SH_BOSS_W + x] = (u8)(PAL_GLOW + 8);
-    for (y = 12; y < 20; y++) for (x = 20; x < 28; x++) dst[y * SH_BOSS_W + x] = core;
-    if (kind == 3) {
-        for (y = 5; y < 29; y++) {
-            dst[y * SH_BOSS_W + 23] = C_WHITE;
-            dst[y * SH_BOSS_W + 24] = C_WHITE;
+        bhline(dst, w, h, 4, w - 5, 6, C_DGRAY);          /* armour seams */
+        bhline(dst, w, h, 3, w - 4, 19, C_DGRAY);
+        brect(dst, w, h, cx - 6, 8, cx + 5, 18, PAL_FIRE + 6);  /* core */
+        brect(dst, w, h, cx - 6, 8, cx + 5, 8, C_RED);
+        brect(dst, w, h, cx - 6, 18, cx + 5, 18, C_RED);
+        for (x = 6; x < w - 6; x += 6) bset(dst, w, h, x, h - 3, PAL_FIRE + 12); /* gun ports */
+        bset(dst, w, h, 8, 4, C_YELLOW);  bset(dst, w, h, w - 9, 4, C_YELLOW);
+        break; }
+
+    case 1: {   /* REAPER - small crimson dagger pointing DOWN, swept wings */
+        w = 32; h = 28; cx = w / 2;
+        memset(dst, 0, w * h);
+        for (y = 0; y < h; y++) {
+            i16 half = 13 - (i16)((y * 11) / h);          /* wide top -> point */
+            if (half < 1) half = 1;
+            bhline(dst, w, h, cx - half, cx + half, y, C_LRED);
+            bset(dst, w, h, cx - half, y, C_RED);
+            bset(dst, w, h, cx + half, y, C_RED);
         }
-        for (x = 8; x < 40; x += 3) {
-            dst[8 * SH_BOSS_W + x] = PAL_GLOW + 12;
-            dst[26 * SH_BOSS_W + x] = PAL_GLOW + 10;
+        for (y = 5; y < 12; y++) {                        /* swept-back wings */
+            i16 s = 14 - (y - 5);
+            bhline(dst, w, h, cx - s, cx - s + 2, y, C_RED);
+            bhline(dst, w, h, cx + s - 2, cx + s, y, C_RED);
         }
-        for (y = 10; y < 24; y++) {
-            dst[y * SH_BOSS_W + 9] = edge;
-            dst[y * SH_BOSS_W + 38] = edge;
+        brect(dst, w, h, cx - 2, 3, cx + 1, 7, C_YELLOW); /* cockpit eye */
+        bset(dst, w, h, cx - 1, 5, PAL_FIRE + 14);
+        bset(dst, w, h, cx, 5, PAL_FIRE + 14);
+        bset(dst, w, h, cx - 1, h - 1, C_WHITE);          /* piercing tip */
+        break; }
+
+    case 2: {   /* SEEKER - green orbiter disc with a glowing eye + spokes */
+        w = 40; h = 26; cx = w / 2;
+        memset(dst, 0, w * h);
+        for (y = 0; y < h; y++) {
+            i16 dy = y - (h / 2);
+            i16 ay = dy < 0 ? -dy : dy;
+            i16 half = (ay < 4) ? 18 : (ay < 8) ? 15 : (ay < 11) ? 9 : 3;
+            bhline(dst, w, h, cx - half, cx + half, y, C_LGREEN);
+            bset(dst, w, h, cx - half, y, C_GREEN);
+            bset(dst, w, h, cx + half, y, C_GREEN);
         }
+        for (x = 4; x < w - 4; x += 5) {                  /* rotating-spoke hint */
+            bset(dst, w, h, x, h / 2, PAL_GLOW + 12);
+        }
+        brect(dst, w, h, cx - 4, h / 2 - 3, cx + 3, h / 2 + 2, PAL_GLOW + 8);
+        brect(dst, w, h, cx - 2, h / 2 - 1, cx + 1, h / 2, C_WHITE);   /* eye */
+        break; }
+
+    case 3: {   /* LEVIATHAN - wide grey carrier with two open hangar bays */
+        w = 64; h = 30; cx = w / 2;
+        memset(dst, 0, w * h);
+        brect(dst, w, h, 3, 3, w - 4, h - 5, C_LGRAY);
+        brect(dst, w, h, 3, 3, w - 4, 3, C_DGRAY);        /* top/bottom edges */
+        brect(dst, w, h, 3, h - 5, w - 4, h - 5, C_DGRAY);
+        brect(dst, w, h, cx - 7, 1, cx + 6, 12, C_LGRAY); /* bridge tower */
+        brect(dst, w, h, cx - 5, 3, cx + 4, 9, PAL_GLOW + 6);
+        brect(dst, w, h, 8, 11, 20, h - 8, C_BLACK);      /* left hangar bay */
+        brect(dst, w, h, w - 21, 11, w - 9, h - 8, C_BLACK); /* right hangar bay */
+        for (y = 11; y <= h - 8; y++) {                   /* bay frame lights */
+            bset(dst, w, h, 8, y, C_LGREEN);  bset(dst, w, h, 20, y, C_LGREEN);
+            bset(dst, w, h, w - 21, y, C_LGREEN); bset(dst, w, h, w - 9, y, C_LGREEN);
+        }
+        for (x = 6; x < w - 6; x += 8) bset(dst, w, h, x, h - 3, PAL_FIRE + 10); /* thrusters */
+        break; }
+
+    default: {  /* OVERLORD - tall magenta finale with white spine + emitters */
+        w = 48; h = 40; cx = w / 2;
+        memset(dst, 0, w * h);
+        for (y = 0; y < h; y++) {
+            i16 half = (y < 8) ? 2 + y * 2 : (y < 26) ? 20 : (y < 34) ? 26 - (y - 26) : 14;
+            bhline(dst, w, h, cx - half, cx + half, y, C_LMAG);
+            bset(dst, w, h, cx - half, y, C_MAGENTA);
+            bset(dst, w, h, cx + half, y, C_MAGENTA);
+        }
+        for (y = 6; y < h - 6; y++) {                     /* white spine */
+            bset(dst, w, h, cx - 1, y, C_WHITE);
+            bset(dst, w, h, cx, y, C_WHITE);
+        }
+        brect(dst, w, h, cx - 5, 16, cx + 4, 26, PAL_GLOW + 4);  /* core */
+        for (x = 8; x < w - 8; x += 4) {                  /* emitter studs */
+            bset(dst, w, h, x, 8, PAL_GLOW + 12);
+            bset(dst, w, h, x, h - 8, PAL_GLOW + 10);
+        }
+        for (y = 12; y < 28; y++) { bset(dst, w, h, 9, y, C_MAGENTA); bset(dst, w, h, w - 10, y, C_MAGENTA); }
+        break; }
     }
-    for (y = 24; y < 30; y++) {
-        dst[y * SH_BOSS_W + 14] = PAL_FIRE + 10; dst[y * SH_BOSS_W + 15] = PAL_FIRE + 10;
-        dst[y * SH_BOSS_W + 32] = PAL_FIRE + 10; dst[y * SH_BOSS_W + 33] = PAL_FIRE + 10;
-    }
+    *ow = w; *oh = h;
 }
 
 /* recolour the cannon bullet into laser/wave palettes */
@@ -319,10 +393,11 @@ void sprites_init(void)
     build_pu(spr_powerup[PU_WAVE],    C_LMAG);
     build_pu(spr_powerup[PU_BOMB],    C_LRED);
     build_pu(spr_powerup[PU_SCORE],   C_WHITE);
-    build_boss(spr_boss[0], 0);
-    build_boss(spr_boss[1], 1);
-    build_boss(spr_boss[2], 2);
-    build_boss(spr_boss[3], 3);
+    {
+        i16 b;
+        for (b = 0; b < NBOSS; b++)
+            build_boss(spr_boss[b], (u8)b, &spr_boss_w[b], &spr_boss_h[b]);
+    }
     rom_font = get_rom8x8();
 }
 

@@ -22,16 +22,39 @@ static Particle part[MAX_PART];
 static Star     star[MAX_STARS];
 static Missile  msl[MAX_MISSILE];
 
+/* movement archetypes and attack scripts: decoupled from the roster slot so a
+   boss's silhouette, size, motion, and gunnery are all independent axes. */
+enum { MV_CARRIER, MV_DIVER, MV_ORBITER, MV_WALL, MV_FINALE };
+enum { AK_CARRIER, AK_LANCE, AK_SPIRAL, AK_WALL, AK_FINAL };
+
+/* roster slots (footprint/hitbox is owned by the sprite: spr_boss_w/h[spr]). */
+typedef struct { u8 spr, mvt, atkset; i16 hpbonus; } BossDef;
+/* GORGON, REAPER, SEEKER, LEVIATHAN, OVERLORD (finale) */
+static const BossDef BOSSDEF[NBOSS] = {
+    /* spr mvt         atkset      hpbonus */
+    {  0, MV_WALL,     AK_WALL,     40 },   /* 0 GORGON    - slow low tank       */
+    {  1, MV_DIVER,    AK_LANCE,   -10 },   /* 1 REAPER    - small diving striker */
+    {  2, MV_ORBITER,  AK_SPIRAL,    0 },   /* 2 SEEKER    - mid-screen strafer   */
+    {  3, MV_CARRIER,  AK_CARRIER,  20 },   /* 3 LEVIATHAN - fighter carrier      */
+    {  4, MV_FINALE,   AK_FINAL,    90 },   /* 4 OVERLORD  - wave-60 finale       */
+};
+
 static struct {
     bool active, entering;
     i16  x, y, hp, maxhp, dir, t, firecd, charge;
-    i16  tx, ty, mv_t;
-    u8   kind;               /* 0 dreadnought, 1 warship, 2 hive, 3 final */
+    i16  tx, ty, mv_t;       /* tx target-x; ty reused as diver sub-state    */
+    i16  w, h;               /* per-boss footprint = hitbox                  */
+    u8   kind;               /* roster slot 0..NBOSS-1 (name + finale test)  */
+    u8   spr;                /* sprite index into spr_boss[]                 */
+    u8   mvt;                /* movement archetype MV_*                      */
+    u8   atkset;             /* attack script AK_*                           */
     u8   phase;              /* 0 full, 1 <66%, 2 <33% (enraged) */
     u8   last_phase, summons;
-    u8   atk;                /* current attack pattern within the kind */
+    u8   atk;                /* current attack pattern within the script     */
     i16  atk_t;              /* frames until the next pattern switch    */
     i16  spin;              /* rotating-spiral angle (sintab index)    */
+    i16  launch_t;           /* carrier squad-launch countdown               */
+    u8   squads;             /* squads launched this phase (bay throttle)    */
 } boss;
 
 /* expanding-ring explosion animation */
@@ -138,35 +161,28 @@ static i16 diff_boss_hp_mul(void)
 
 static i16 diff_boss_fire_cd(void)
 {
-    if (boss.kind == 3) {
-        if (g_diff == DIF_EASY) return (i16)(42 - boss.phase * 7);
-        if (g_diff == DIF_HARD) return (i16)(28 - boss.phase * 6);
-        return (i16)(34 - boss.phase * 6);
+    i16 d = (g_diff == DIF_EASY) ? 8 : (g_diff == DIF_HARD) ? -8 : 0;
+    switch (boss.atkset) {
+    case AK_FINAL:   return (i16)(34 + d - boss.phase * 6);
+    case AK_LANCE:   return (i16)(30 + d - boss.phase * 6);  /* fast striker    */
+    case AK_WALL:    return (i16)(54 + d - boss.phase * 9);  /* slow heavy      */
+    case AK_CARRIER: return (i16)(70 + d - boss.phase * 8);  /* thin suppress   */
+    default:         return (i16)(46 + d - boss.phase * 10); /* AK_SPIRAL       */
     }
-    if (boss.kind == 1) {
-        if (g_diff == DIF_EASY) return (i16)(48 - boss.phase * 7);
-        if (g_diff == DIF_HARD) return (i16)(30 - boss.phase * 7);
-        return (i16)(38 - boss.phase * 7);
-    }
-    if (boss.kind == 0) {
-        if (g_diff == DIF_EASY) return (i16)(64 - boss.phase * 8);
-        if (g_diff == DIF_HARD) return (i16)(46 - boss.phase * 9);
-        return (i16)(54 - boss.phase * 9);
-    }
-    if (g_diff == DIF_EASY) return (i16)(56 - boss.phase * 8);
-    if (g_diff == DIF_HARD) return (i16)(38 - boss.phase * 10);
-    return (i16)(46 - boss.phase * 10);
 }
 
 static i16 boss_attack_count(void)
 {
-    return (boss.kind == 3) ? 4 : 3;
+    return (boss.atkset == AK_FINAL) ? 4 : (boss.atkset == AK_CARRIER) ? 2 : 3;
 }
 
 static i16 boss_atk_time(void)
 {
-    i16 t = (boss.kind == 3) ? 112 : (boss.kind == 1) ? 96 : (boss.kind == 0) ? 140 : 126;
-    t -= boss.phase * ((boss.kind == 0) ? 22 : 26);
+    i16 t = (boss.atkset == AK_FINAL)   ? 112 :
+            (boss.atkset == AK_LANCE)   ?  84 :
+            (boss.atkset == AK_WALL)    ? 140 :
+            (boss.atkset == AK_CARRIER) ? 150 : 126;
+    t -= boss.phase * ((boss.atkset == AK_WALL) ? 22 : 26);
     return (t < 48) ? 48 : t;
 }
 
@@ -353,17 +369,24 @@ static void start_wave(void)
         msg_timer = 120;
     }
     if (wave == 60 || wave % 4 == 0) {              /* boss wave */
-        static const u8 boss_order[3] = { 1, 0, 2 };   /* warship, dreadnought, hive */
+        static const u8 boss_order[4] = { 1, 0, 3, 2 };  /* reaper, gorgon, leviathan, seeker */
         i16 boss_index = (i16)((wave / 4) - 1);
+        const BossDef *bd;
         boss.active = TRUE; boss.entering = TRUE;
-        boss.kind = (wave == 60 && !campaign_won) ? 3 : boss_order[boss_index % 3];
+        boss.kind = (wave == 60 && !campaign_won) ? (u8)(NBOSS - 1)
+                                                  : boss_order[boss_index % 4];
+        bd = &BOSSDEF[boss.kind];
+        boss.spr = bd->spr; boss.mvt = bd->mvt; boss.atkset = bd->atkset;
+        boss.w = spr_boss_w[boss.spr]; boss.h = spr_boss_h[boss.spr];
         boss.phase = 0; boss.last_phase = 0; boss.summons = 0;
         boss.atk = 0; boss.atk_t = boss_atk_time(); boss.spin = 0;
-        boss.x = SCRW / 2 - SH_BOSS_W / 2; boss.y = -SH_BOSS_H;
-        boss.maxhp = boss.hp = 36 + wave * diff_boss_hp_mul() + boss_index * 8;
-        if (boss.kind == 3) boss.maxhp = boss.hp = (i16)(boss.maxhp + 90);
+        boss.x = SCRW / 2 - boss.w / 2; boss.y = -boss.h;
+        boss.maxhp = boss.hp = (i16)(36 + wave * diff_boss_hp_mul()
+                                     + boss_index * 8 + bd->hpbonus);
+        if (boss.maxhp < 20) boss.maxhp = boss.hp = 20;
         boss.dir = 1; boss.t = 0; boss.firecd = 60; boss.charge = 0;
-        boss.tx = boss.x; boss.ty = 14; boss.mv_t = 0;
+        boss.tx = boss.x; boss.ty = 0; boss.mv_t = 50;
+        boss.launch_t = 90; boss.squads = 0;
         to_spawn = 0;
         snd_sfx(SFX_BOSS);
     } else {
@@ -425,15 +448,39 @@ static bool spawn_one(u8 type, i16 x, i16 y, u8 mode)
     return FALSE;
 }
 
+static i16 free_enemy_slots(void)
+{
+    int i; i16 n = 0;
+    for (i = 0; i < MAX_ENEMY; i++) if (!enemy[i].active) n++;
+    return n;
+}
+
 static void summon_escort(void)
 {
     int n;
-    u8 type = (boss.kind == 2) ? E_WEAVER : E_SCOUT;
+    u8 type = (boss.atkset == AK_SPIRAL) ? E_WEAVER : E_SCOUT;
     i16 x0 = (boss.x < 80) ? boss.x + 36 : boss.x - 28;
     for (n = 0; n < 3; n++) {
         spawn_one(type, x0 + n * 20, -SH_EN_H - n * 12, 0);
     }
     set_msg("ESCORTS INBOUND");
+}
+
+/* carrier: launch a fighter squad from the two hangar bays, but only if the
+   shared enemy[] pool has room for the whole squad (never partial/overflow). */
+static void launch_squad(void)
+{
+    i16 size = (i16)(2 + (boss.phase >= 1 ? 1 : 0));
+    i16 lx = boss.x + 6;
+    i16 rx = boss.x + boss.w - 6 - SH_EN_W;
+    int n;
+    if (free_enemy_slots() < size) return;
+    for (n = 0; n < size; n++) {
+        i16 bx = (n & 1) ? rx : lx;
+        spawn_one(E_SCOUT, bx, -SH_EN_H - n * 10, 0);
+    }
+    boss.squads++;
+    set_msg("FIGHTERS LAUNCHED");
 }
 
 /* spawn one drip, or occasionally a whole formation (counts as several) */
@@ -560,17 +607,17 @@ static void add_ebullet(i16 x, i16 y, i16 dx, i16 dy)
     b->kind = 0; b->grazed = 0; b->dmg = 1;
 }
 
-/* Boss attacks: each kind cycles through 3 distinct patterns (boss.atk),
-   intensified by the enrage phase. Volleys stay small (<= ~7 bullets) so the
-   variety comes from pattern shape, not raw bullet count. */
+/* Boss attacks: each attack script (boss.atkset) has its own personality and
+   cycles a few patterns (boss.atk), intensified by the enrage phase. Volleys
+   stay small (<= ~7) so variety comes from pattern shape, not bullet count. */
 static void boss_fire(void)
 {
-    i16 bx = boss.x + SH_BOSS_W / 2, by = boss.y + SH_BOSS_H - 6;
+    i16 bx = boss.x + boss.w / 2, by = boss.y + boss.h - 6;
     i16 dir = (player.x + 8 > bx) ? 1 : -1;
     u8  hard = (g_diff == DIF_HARD);
     i16 k;
-    switch (boss.kind) {
-    case 3:                                   /* ---- FINAL CORE ---- */
+    switch (boss.atkset) {
+    case AK_FINAL:                            /* ---- OVERLORD finale ---- */
         switch (boss.atk) {
         case 1:                               /* crossing lances */
             add_ebullet(bx - 18, by - 2, 2, 4); add_ebullet(bx + 18, by - 2, -2, 4);
@@ -598,25 +645,21 @@ static void boss_fire(void)
             break;
         }
         break;
-    case 1:                                   /* ---- WARSHIP ---- */
+    case AK_LANCE:                            /* ---- REAPER: sparse, fast, aimed ---- */
         switch (boss.atk) {
-        case 1:                               /* rapid straight barrage */
-            add_ebullet(bx - 6, by, 0, 5); add_ebullet(bx + 6, by, 0, 5);
-            if (boss.phase >= 1) add_ebullet(bx, by, 0, 6);
+        case 1:                               /* light scatter on the retreat */
+            add_ebullet(bx - 6, by, -1, 4); add_ebullet(bx + 6, by, 1, 4);
             break;
-        case 2:                               /* V cross-shots */
-            add_ebullet(bx - 10, by, 2, 3);  add_ebullet(bx + 10, by, -2, 3);
-            add_ebullet(bx - 4, by, 1, 4);   add_ebullet(bx + 4, by, -1, 4);
-            if (hard && boss.phase >= 1) add_ebullet(bx, by, 0, 4);
+        case 2:                               /* quick aimed pair */
+            add_ebullet(bx - 2, by, dir, 5); add_ebullet(bx + 2, by, dir, 5);
             break;
-        default:                              /* aimed twin bursts */
-            add_ebullet(bx - 8, by, dir, 3); add_ebullet(bx + 8, by, dir, 3);
-            add_ebullet(bx, by, 0, 4);
-            if (g_diff != DIF_EASY && boss.phase >= 1) add_ebullet(bx, by, dir * 2, 3);
+        default:                              /* tight aimed 3-lance */
+            add_ebullet(bx, by, dir, 6);
+            add_ebullet(bx, by, dir, 5); add_ebullet(bx, by, dir * 2, 5);
             break;
         }
         break;
-    case 2:                                   /* ---- HIVE ---- */
+    case AK_SPIRAL:                           /* ---- SEEKER: rotating hazard ---- */
         switch (boss.atk) {
         case 1:                               /* rotating spiral */
             { i16 a, arms = (boss.phase >= 1) ? 3 : 2;
@@ -627,17 +670,24 @@ static void boss_fire(void)
               }
               boss.spin = (i16)((boss.spin + 5) & 63); }
             break;
-        case 2:                               /* targeted cluster */
-            add_ebullet(bx, by, dir, 3); add_ebullet(bx - 3, by, dir, 4);
-            add_ebullet(bx + 3, by, dir, 4);
-            if (boss.phase >= 1) add_ebullet(bx, by, dir * 2, 3);
+        case 2:                               /* leading side-shots */
+            add_ebullet(bx - 10, by, boss.dir, 3); add_ebullet(bx + 10, by, boss.dir, 3);
+            if (boss.phase >= 1) add_ebullet(bx, by, dir, 4);
             break;
         default:                              /* radial ring */
             for (k = (hard ? -3 : -2); k <= (hard ? 3 : 2); k++) add_ebullet(bx, by, k, 3);
             break;
         }
         break;
-    default:                                  /* ---- DREADNOUGHT ---- */
+    case AK_CARRIER:                          /* ---- LEVIATHAN: thin suppressive ---- */
+        if (boss.atk == 1) {
+            add_ebullet(bx, by, dir, 3);      /* single aimed lob */
+        } else {
+            add_ebullet(bx - 5, by, dir, 3);  /* aimed pair */
+            add_ebullet(bx + 5, by, dir, 3);
+        }
+        break;
+    default:                                  /* ---- GORGON wall (AK_WALL) ---- */
         switch (boss.atk) {
         case 1:                               /* wall with a dodge gap under the player */
             { i16 pc = (i16)((player.x + 8 - (bx - 30)) / 10);
@@ -664,44 +714,75 @@ static void move_toward(i16 *v, i16 target, i16 step)
     else if (*v > target) { *v -= step; if (*v < target) *v = target; }
 }
 
+/* Each movement archetype owns its own vertical band (there is no shared top
+   band any more); generic clamps below just keep every boss on-screen and
+   above the player's home row. */
 static void boss_move(void)
 {
-    i16 spd;
-    switch (boss.kind) {
-    case 1:                                   /* warship: fast strafing dashes */
+    i16 cx = (i16)(SCRW / 2 - boss.w / 2);
+    switch (boss.mvt) {
+    case MV_CARRIER:                          /* high slow hover; launches fighters */
         if (--boss.mv_t <= 0) {
-            boss.mv_t = (i16)(42 - boss.phase * 8);
-            boss.dir = (player.x + 8 > boss.x + SH_BOSS_W / 2) ? 1 : -1;
-            if (rnd() & 1) boss.dir = (i16)-boss.dir;
+            boss.mv_t = 70;
+            boss.tx = (rnd() & 1) ? 8 : (i16)(SCRW - boss.w - 8);
         }
-        spd = (i16)(3 + boss.phase);
-        boss.x += boss.dir * spd;
-        boss.y = (i16)(12 + (sintab[(boss.t * 2) & 63] + 46) / 16);
+        move_toward(&boss.x, boss.tx, 1);
+        boss.y = (i16)(8 + (sintab[boss.t & 63] + 46) / 40);
+        if (--boss.launch_t <= 0) {
+            launch_squad();
+            boss.launch_t = (i16)(180 - boss.phase * 40);
+        }
         break;
-    case 2:                                   /* hive: slow drifting sine arcs */
-        boss.x = (i16)(SCRW / 2 - SH_BOSS_W / 2 + sintab[boss.t & 63] * (boss.phase + 2) / 2);
-        boss.y = (i16)(16 + sintab[(boss.t + 16) & 63] / 10);
+    case MV_DIVER:                            /* swoop toward the player, retreat */
+        if (boss.ty == 0) {                   /* rest / drift high */
+            boss.y = (i16)(18 + (sintab[boss.t & 63] + 46) / 30);
+            move_toward(&boss.x, boss.tx, 1);
+            if (--boss.mv_t <= 0) { boss.ty = 1; boss.tx = (i16)(player.x + 8 - boss.w / 2); }
+        } else if (boss.ty == 1) {            /* diving */
+            move_toward(&boss.x, boss.tx, 3);
+            move_toward(&boss.y, 96, 4);
+            if (boss.y >= 96) boss.ty = 2;
+        } else {                              /* retreat */
+            move_toward(&boss.y, 18, 3);
+            if (boss.y <= 18) {
+                boss.ty = 0;
+                boss.mv_t = (i16)(44 - boss.phase * 10);
+                boss.tx = rrange(8, (i16)(SCRW - boss.w - 8));
+            }
+        }
         break;
-    case 3:                                   /* final: figure-eight core */
-        boss.x = (i16)(SCRW / 2 - SH_BOSS_W / 2 + sintab[(boss.t * 2) & 63] * 3 / 2);
-        boss.y = (i16)(15 + sintab[(boss.t * 3 + 16) & 63] / 6);
+    case MV_ORBITER:                          /* fast mid-screen strafe */
+        boss.x = (i16)(cx + sintab[(boss.t * 2) & 63] * (3 + boss.phase) / 2);
+        boss.y = (i16)(46 + sintab[(boss.t + 16) & 63] / 6);
+        boss.dir = (sintab[(boss.t * 2 + 16) & 63] >= 0) ? 1 : -1;
+        break;
+    case MV_FINALE:                           /* figure-eight core, wide y range */
+        boss.x = (i16)(cx + sintab[(boss.t * 2) & 63] * 3 / 2);
+        boss.y = (i16)(16 + (sintab[(boss.t * 3 + 16) & 63] + 46) / 4);
         if ((boss.t & 127) == 0) boss.charge = 18;
         break;
-    default:                                  /* dreadnought: lane-lock crawl */
-        if (--boss.mv_t <= 0) {
-            boss.mv_t = (i16)(82 - boss.phase * 14);
-            boss.tx = (i16)(((player.x + 8) / 40) * 40 + 20 - SH_BOSS_W / 2);
-            if (boss.tx < 4) boss.tx = 4;
-            if (boss.tx > SCRW - SH_BOSS_W - 4) boss.tx = SCRW - SH_BOSS_W - 4;
-        }
-        move_toward(&boss.x, boss.tx, (i16)(1 + boss.phase));
-        boss.y = (i16)(14 + ((boss.t >> 4) & 1) * (1 + boss.phase));
+    default:                                  /* MV_WALL: low slow bounce, boxes player in */
+        boss.x += boss.dir;
+        boss.y = (i16)(84 + ((boss.t >> 4) & 1) * 2);
         break;
     }
     if (boss.x < 4) { boss.x = 4; boss.dir = 1; }
-    if (boss.x > SCRW - SH_BOSS_W - 4) { boss.x = SCRW - SH_BOSS_W - 4; boss.dir = -1; }
-    if (boss.y < 8) boss.y = 8;
-    if (boss.y > 34) boss.y = 34;
+    if (boss.x > SCRW - boss.w - 4) { boss.x = (i16)(SCRW - boss.w - 4); boss.dir = -1; }
+    if (boss.y < 6) boss.y = 6;
+    if (boss.y > SCRH - boss.h - 70) boss.y = (i16)(SCRH - boss.h - 70);
+}
+
+/* nominal resting height per archetype, so the slide-in stops where the boss
+   will actually hover instead of snapping after the entrance. */
+static i16 boss_rest_y(void)
+{
+    switch (boss.mvt) {
+    case MV_CARRIER: return 9;
+    case MV_ORBITER: return 46;
+    case MV_WALL:    return 84;
+    case MV_FINALE:  return 16;
+    default:         return 18;   /* MV_DIVER */
+    }
 }
 
 /* expanding-ring explosion animation */
@@ -766,7 +847,7 @@ static void apply_boss_damage(i16 dmg)
 {
     if (!boss.active) return;
     boss.hp -= dmg;
-    burst(boss.x + SH_BOSS_W / 2, boss.y + SH_BOSS_H / 2, 8, C_WHITE, C_YELLOW);
+    burst(boss.x + boss.w / 2, boss.y + boss.h / 2, 8, C_WHITE, C_YELLOW);
     if (boss.hp <= 0) boss_die();
 }
 
@@ -857,16 +938,16 @@ static void kill_enemy(Enemy *e)
 
 static void boss_die(void)
 {
-    fireburst(boss.x + SH_BOSS_W / 2, boss.y + SH_BOSS_H / 2, 60);
-    spawn_blast(boss.x + SH_BOSS_W / 2, boss.y + SH_BOSS_H / 2, 3);
+    fireburst(boss.x + boss.w / 2, boss.y + boss.h / 2, 60);
+    spawn_blast(boss.x + boss.w / 2, boss.y + boss.h / 2, 3);
     score_add(5000 * combo_mult());
     flash = 8; shk = 24;
     bosses_defeated++;
     force_powerup(boss.x + 10, boss.y + 10, PU_LIFE);
-    force_powerup(boss.x + SH_BOSS_W - 22, boss.y + 10, PU_BOMB);
-    force_powerup(boss.x + SH_BOSS_W / 2 - SH_PU_W / 2, boss.y + 20, PU_MISSILE);
+    force_powerup(boss.x + boss.w - 22, boss.y + 10, PU_BOMB);
+    force_powerup(boss.x + boss.w / 2 - SH_PU_W / 2, boss.y + 20, PU_MISSILE);
     boss.active = FALSE;
-    if (boss.kind == 3 && wave == 60 && !campaign_won) {
+    if (boss.kind == (u8)(NBOSS - 1) && wave == 60 && !campaign_won) {
         campaign_won = 1;
         win_pending = 1;
     }
@@ -886,7 +967,7 @@ static void missile_boom(i16 mx, i16 my)
         if (enemy[i].hp <= 0) kill_enemy(&enemy[i]);
     }
     if (boss.active &&
-        overlap(mx - 26, my - 26, 52, 52, boss.x, boss.y, SH_BOSS_W, SH_BOSS_H)) {
+        overlap(mx - 26, my - 26, 52, 52, boss.x, boss.y, boss.w, boss.h)) {
         apply_boss_damage(boss_pct_damage(10));
     }
     snd_sfx(SFX_EXPLODE);
@@ -985,7 +1066,7 @@ static void update_play(void)
             long d = dx * dx + dy * dy;
             if (d < best) { best = d; tx = enemy[j].x + SH_EN_W / 2; }
         }
-        if (boss.active && boss.y < m->y) tx = boss.x + SH_BOSS_W / 2;
+        if (boss.active && boss.y < m->y) tx = boss.x + boss.w / 2;
         if (tx >= 0) {
             if (tx > m->x + 2 && m->dx < 2)  m->dx++;
             if (tx < m->x - 2 && m->dx > -2) m->dx--;
@@ -1003,7 +1084,7 @@ static void update_play(void)
         }
         if (m->active && boss.active &&
             overlap(m->x, m->y, SH_MSL_W, SH_MSL_H,
-                    boss.x, boss.y, SH_BOSS_W, SH_BOSS_H)) {
+                    boss.x, boss.y, boss.w, boss.h)) {
             m->active = FALSE;
             missile_boom(m->x + SH_MSL_W / 2, m->y);
         }
@@ -1088,8 +1169,9 @@ static void update_play(void)
     /* ---- boss ---- */
     if (boss.active) {
         if (boss.entering) {
-            boss.y += 2;
-            if (boss.y >= 14) { boss.y = 14; boss.entering = FALSE; }
+            i16 ry = boss_rest_y();
+            boss.y += 3;
+            if (boss.y >= ry) { boss.y = ry; boss.entering = FALSE; }
         } else {
             boss_move();
             if (boss.firecd == 18) { boss.charge = 18; snd_sfx(SFX_PHASE); }
@@ -1108,7 +1190,10 @@ static void update_play(void)
             boss.last_phase = boss.phase;
             snd_sfx(SFX_PHASE);
             set_msg("BOSS PHASE");
-            if ((boss.kind == 0 || boss.kind == 2 || boss.kind == 3) && boss.phase > 0 && !(boss.summons & (1 << boss.phase))) {
+            /* carrier already fills the screen with its own fighters; other
+               non-striker bosses call in a one-shot escort per phase */
+            if (boss.mvt != MV_CARRIER && boss.mvt != MV_DIVER
+                && boss.phase > 0 && !(boss.summons & (1 << boss.phase))) {
                 boss.summons |= (u8)(1 << boss.phase);
                 summon_escort();
             }
@@ -1118,7 +1203,7 @@ static void update_play(void)
             int j;
             for (j = 0; j < MAX_PBULLET; j++) if (pbul[j].active &&
                 overlap(pbul[j].x, pbul[j].y, SH_PB_W, SH_PB_H,
-                        boss.x + 2, boss.y, SH_BOSS_W - 4, SH_BOSS_H)) {
+                        boss.x + 2, boss.y, (i16)(boss.w - 4), boss.h)) {
                 if (pbul[j].kind != WT_LASER) pbul[j].active = FALSE;
                 burst(pbul[j].x, pbul[j].y, 2, C_WHITE, C_YELLOW);
                 boss.hp -= pbul[j].dmg;
@@ -1127,7 +1212,7 @@ static void update_play(void)
         }
         /* boss body vs player */
         if (boss.active && player.alive && player.invuln == 0 &&
-            overlap(boss.x + 2, boss.y, SH_BOSS_W - 4, SH_BOSS_H,
+            overlap(boss.x + 2, boss.y, (i16)(boss.w - 4), boss.h,
                     player.x + 3, player.y + 3, SH_SHIP_W - 6, SH_SHIP_H - 6))
             hurt_player();
     }
@@ -1183,7 +1268,7 @@ static void draw_dust(void)
 }
 
 static const char *WNAME[WT_COUNT] = { "CANNON", "LASER", "WAVE" };
-static const char *BOSSNAME[NBOSS] = { "DREADNOUGHT", "WARSHIP", "HIVE", "OVERLORD" };
+static const char *BOSSNAME[NBOSS] = { "GORGON", "REAPER", "SEEKER", "LEVIATHAN", "OVERLORD" };
 
 static void draw_hud(void)
 {
@@ -1292,20 +1377,22 @@ static void draw_play(void)
         }
     }
     if (boss.active) {
-        DS(boss.x, boss.y, SH_BOSS_W, SH_BOSS_H, spr_boss[boss.kind]);
-        if (boss.phase >= 1) {
-            vga_hline(boss.x + 9 + shx, boss.y + 9 + shy, 30, C_DGRAY);
-            vga_hline(boss.x + 13 + shx, boss.y + 25 + shy, 22, C_DGRAY);
+        i16 cx = (i16)(boss.x + boss.w / 2 + shx), cy = (i16)(boss.y + boss.h / 2 + shy);
+        DS(boss.x, boss.y, boss.w, boss.h, spr_boss[boss.spr]);
+        if (boss.phase >= 1) {                /* battle damage, scaled to footprint */
+            vga_hline((i16)(cx - boss.w / 3), (i16)(cy - boss.h / 6), (i16)(2 * boss.w / 3), C_DGRAY);
+            vga_hline((i16)(cx - boss.w / 4), (i16)(cy + boss.h / 4), (i16)(boss.w / 2), C_DGRAY);
         }
         if (boss.phase >= 2) {
-            vga_frame(boss.x + 15 + shx, boss.y + 7 + shy, 18, 22, C_LRED);
-            vga_pixel(boss.x + 10 + shx, boss.y + 18 + shy, C_YELLOW);
-            vga_pixel(boss.x + 37 + shx, boss.y + 18 + shy, C_YELLOW);
+            vga_frame((i16)(cx - 9), (i16)(cy - 6), 18, 12, C_LRED);
+            vga_pixel((i16)(cx - boss.w / 3), cy, C_YELLOW);
+            vga_pixel((i16)(cx + boss.w / 3), cy, C_YELLOW);
         }
-        if (boss.charge > 0) vga_frame(boss.x - 2 + shx, boss.y - 2 + shy, SH_BOSS_W + 4, SH_BOSS_H + 4,
+        if (boss.charge > 0) vga_frame((i16)(boss.x - 2 + shx), (i16)(boss.y - 2 + shy),
+                                       (i16)(boss.w + 4), (i16)(boss.h + 4),
                                        (boss.charge & 2) ? C_WHITE : C_LRED);
         /* pulsing core overlay (faster when enraged) */
-        vga_rect(boss.x + 21 + shx, boss.y + 13 + shy, 6, 6,
+        vga_rect((i16)(cx - 3), (i16)(cy - 3), 6, 6,
                  (u8)(PAL_FIRE + 8 + ((frame >> (boss.phase >= 2 ? 0 : 1)) & 7)));
     }
     for (i = 0; i < MAX_MISSILE; i++) if (msl[i].active)
@@ -1677,7 +1764,11 @@ void game_selftest(const char *bmp)
         enemy[i].base = enemy[i].x; enemy[i].hp = 2; enemy[i].vy = 1; enemy[i].t = i * 8;
         enemy[i].elite = (i == 1 || i == 4);
     }
-    boss.active = TRUE; boss.entering = FALSE; boss.kind = 0; boss.x = SCRW/2 - SH_BOSS_W/2; boss.y = 22;
+    boss.active = TRUE; boss.entering = FALSE; boss.kind = 3;   /* LEVIATHAN carrier */
+    { const BossDef *bd = &BOSSDEF[boss.kind];
+      boss.spr = bd->spr; boss.mvt = bd->mvt; boss.atkset = bd->atkset;
+      boss.w = spr_boss_w[boss.spr]; boss.h = spr_boss_h[boss.spr]; }
+    boss.x = (i16)(SCRW/2 - boss.w/2); boss.y = 40;
     boss.hp = 40; boss.maxhp = 120; boss.phase = 1; boss.charge = 12;
     for (i = 0; i < 5; i++) { pbul[i].active = TRUE; pbul[i].kind = WT_LASER; pbul[i].x = 60 + i * 40; pbul[i].y = 100 - i * 10; pbul[i].dy = -12; pbul[i].dmg = 2; }
     for (i = 0; i < 4; i++) { ebul[i].active = TRUE; ebul[i].x = 80 + i * 50; ebul[i].y = 90 + i * 8; ebul[i].dy = 3; }

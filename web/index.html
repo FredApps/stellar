@@ -16,7 +16,7 @@
     -webkit-touch-callout: none;
   }
   #wrap {
-    position: fixed; inset: 0 0 108px 0;
+    position: fixed; inset: 0;
     display: flex; align-items: center; justify-content: center;
     background: #000;
   }
@@ -36,6 +36,25 @@
     opacity: 0.75;
   }
   #fsbtn:hover { opacity: 1; }
+  #sideMenu {
+    position: fixed; left: 10px; top: 50%; transform: translateY(-50%);
+    z-index: 6; display: flex; flex-direction: column; gap: 7px; width: 128px;
+  }
+  #sideMenu button,
+  #sideMenu .button-link {
+    min-height: 34px; font-size: 12px; letter-spacing: 1px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 8px; opacity: 0.9;
+  }
+  #sideMenu button:hover,
+  #sideMenu .button-link:hover { opacity: 1; }
+  button.off, .button-link.off {
+    color: #ffb0d8; border-color: #914577; background: #20101d;
+  }
+  #sideMenu .primary {
+    color: #fff6b0; border-color: #9a8538; background: #221a07;
+  }
+  body.hide-side-menu #sideMenu { display: none; }
   #boot {
     position: fixed; inset: 0; z-index: 10;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -124,6 +143,7 @@
   }
   @media (max-width: 720px) {
     #fsbtn { display: none; }
+    #wrap { inset: 0 0 108px 0; }
     #touchControls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
     #touchControls button { min-height: 46px; font-size: 12px; padding: 0 4px; }
     #touchControls .compact { font-size: 10px; }
@@ -132,6 +152,7 @@
   @media (hover: none), (pointer: coarse) {
     #fsbtn { display: none; }
     #touchControls { display: grid; }
+    #wrap { inset: 0 0 108px 0; }
   }
   @media (orientation: landscape) and (max-height: 520px) {
     #wrap { inset: 0 166px 0 0; }
@@ -156,36 +177,30 @@
 </head>
 <body>
 <div id="wrap"><canvas id="screen" width="320" height="200"></canvas></div>
-<button id="fsbtn" title="Fullscreen (F)">FULLSCREEN</button>
+<div id="sideMenu" aria-label="Menu">
+  <button data-action="newgame" class="primary">NEW GAME</button>
+  <button data-action="fullscreen">FULLSCREEN</button>
+  <button data-action="scores">HIGH SCORE</button>
+  <button data-tap="H">HELP</button>
+  <button data-action="music">MUSIC</button>
+  <button data-action="sfx">SFX</button>
+  <a class="button-link" href="https://github.com/FredApps/Stellar" target="_blank" rel="noopener">GITHUB</a>
+  <a class="button-link" href="https://github.com/FredApps/stellar/releases/latest" target="_blank" rel="noopener">MS-DOS</a>
+</div>
 <div id="touchControls" aria-label="Touch controls">
   <button class="primary" data-hold="SPACE">FIRE</button>
   <button data-hold="SHIFT">BOOST</button>
   <button data-tap="CTRL">MSL</button>
   <button class="danger" data-tap="B">BOMB</button>
   <button data-tap="P">PAUSE</button>
-  <button data-tap="M">MUTE</button>
+  <button data-action="music" class="compact">MUS</button>
+  <button data-action="sfx" class="compact">SFX</button>
   <button data-tap="H">HELP</button>
   <button class="compact" data-action="fullscreen">FULLSCREEN</button>
   <button class="entry-only" data-entry="BKSP">BKSP</button>
   <button class="entry-only primary" data-entry="ENTER">ENTER</button>
 </div>
 <input id="nameInput" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" enterkeyhint="done" inputmode="text" aria-label="High score name">
-<div id="boot">
-  <div class="boot-card">
-    <h1>STELLAR ASSAULT</h1>
-    <p>WASD, arrows, or pointer drag steer. Space fires. Shift boosts.</p>
-    <p>Ctrl launches missiles. B drops bomb. H help. M mute.</p>
-    <p id="scoreStatus" class="score-status">SYNCING SCORES</p>
-    <div class="boot-actions">
-      <button id="startBtn">START</button>
-      <button id="bootFullBtn">FULLSCREEN</button>
-      <button id="bootMuteBtn">MUTE</button>
-      <button id="bootHelpBtn">HELP</button>
-      <a class="button-link" href="https://github.com/FredApps/Stellar" target="_blank" rel="noopener">GITHUB</a>
-      <a class="button-link" href="https://github.com/FredApps/stellar/releases/latest" target="_blank" rel="noopener">MS-DOS</a>
-    </div>
-  </div>
-</div>
-<script src="shooter.js"></script>
+<script src="shooter.js?v=20260707-10"></script>
 </body>
 </html>
