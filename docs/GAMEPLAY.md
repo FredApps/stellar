@@ -72,14 +72,11 @@ Some shooters peel sideways after firing instead of simply falling offscreen.
 Bosses enter every fourth wave and change behavior below about 66% and 33% HP. Dense attacks have
 a flashing charge tell, and damaged bosses show visible scorch/phase overlays.
 
-Boss order rotates Warship -> Dreadnought -> Hive, so the first boss is the aimed-shot Warship
-and the second boss introduces the denser fan pressure.
-
-| Boss | Attack Style |
-|------|--------------|
-| Warship | Aimed twin bursts with center pressure; Hard adds side pressure |
-| Dreadnought | Sweeping bullet fans; Hard adds earlier fast fans; calls escorts at phase changes |
-| Hive | Radial spreads; Hard widens the ring and adds crossfire; calls weaver escorts at phase changes |
+The authored campaign has a unique boss at each boss wave from W04 through W60:
+Gorgon, Reaper, Leviathan, Seeker, Mantis, Anvil, Seraph, Nexus, Kraken,
+Phantom, Citadel, Vortex, Basilisk, Titan, and Overlord. Each has its own
+footprint, vertical movement band, and attack script; the W60 Overlord ends the
+campaign with the win screen and custom win theme.
 
 Defeating a boss drops three pickups — a Life, a Bomb, and a Missile pack. Unused bombs after boss
 waves grant +400 each.

@@ -2,7 +2,7 @@
 
 Stellar is a vertically scrolling VGA space shooter for period PC hardware:
 an Intel 486, MS-DOS, VGA mode 13h, and a PC speaker. It is written in C for
-16-bit real mode with Open Watcom. The current DOS executable is about 47 KB;
+16-bit real mode with Open Watcom. The current DOS executable is about 100 KB;
 the release floppy image is exactly 1,474,560 bytes, the standard 1.44 MB FAT12
 floppy size. The browser port is included in `web/` for local or self-hosted deployment.
 
@@ -20,8 +20,8 @@ floppy size. The browser port is included in `web/` for local or self-hosted dep
   consistent speed on 33 MHz, 66 MHz, and faster Pentium-class machines.
 - Procedural scrolling nebula background, parallax stars, shaded sprites,
   engine flames, boss core effects, and fading particles.
-- Weighted enemy waves, formation spawns, elite variants, and three rotating
-  boss archetypes with difficulty-specific patterns.
+- Weighted enemy waves, formation spawns, elite variants, and fifteen authored
+  campaign bosses with unique silhouettes, movement bands, and attack patterns.
 - Persistent weapon upgrades, homing missiles, smart bombs, Shift boost with
   a boost bar, graze bonuses, combo multipliers, medals, and risk pickups.
 - Easy, Normal, and Hard difficulties share one high-score table; harder modes

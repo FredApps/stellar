@@ -250,20 +250,17 @@ const spr_missile = build(SH_MSL_W, SH_MSL_H, MISSILE_ART);
 const spr_ebullet = build(SH_EB_W, SH_EB_H, EBULLET_ART);
 const spr_pbullet = [build(SH_PB_W, SH_PB_H, PBULLET_ART), null, null];
 const spr_powerup = [];
-const spr_boss = [null, null, null, null, null];
-const spr_boss_w = [0, 0, 0, 0, 0], spr_boss_h = [0, 0, 0, 0, 0];
+const NBOSS = 15;
+const spr_boss = Array(NBOSS).fill(null);
+const spr_boss_w = Array(NBOSS).fill(0), spr_boss_h = Array(NBOSS).fill(0);
 
-/* movement archetypes / attack scripts (mirror of the native enums) */
-const MV_CARRIER = 0, MV_DIVER = 1, MV_ORBITER = 2, MV_WALL = 3, MV_FINALE = 4;
-const AK_CARRIER = 0, AK_LANCE = 1, AK_SPIRAL = 2, AK_WALL = 3, AK_FINAL = 4;
-/* roster: GORGON, REAPER, SEEKER, LEVIATHAN, OVERLORD (finale). Footprint is
-   owned by the sprite (spr_boss_w/h[spr]). */
+/* fixed campaign roster: one authored boss for each boss wave, W04..W60. */
 const BOSSDEF = [
-  { spr:0, mvt:MV_WALL,    atkset:AK_WALL,    hpbonus: 40 },
-  { spr:1, mvt:MV_DIVER,   atkset:AK_LANCE,   hpbonus:-10 },
-  { spr:2, mvt:MV_ORBITER, atkset:AK_SPIRAL,  hpbonus:  0 },
-  { spr:3, mvt:MV_CARRIER, atkset:AK_CARRIER, hpbonus: 20 },
-  { spr:4, mvt:MV_FINALE,  atkset:AK_FINAL,   hpbonus: 90 },
+  { spr:0,  hpbonus: 40 }, { spr:1,  hpbonus:-10 }, { spr:2,  hpbonus: 20 },
+  { spr:3,  hpbonus:  0 }, { spr:4,  hpbonus: 15 }, { spr:5,  hpbonus: 35 },
+  { spr:6,  hpbonus: 10 }, { spr:7,  hpbonus: 25 }, { spr:8,  hpbonus: 30 },
+  { spr:9,  hpbonus:  5 }, { spr:10, hpbonus: 45 }, { spr:11, hpbonus: 15 },
+  { spr:12, hpbonus: 20 }, { spr:13, hpbonus: 60 }, { spr:14, hpbonus: 90 },
 ];
 
 function build_pbul(body, core) {
@@ -288,14 +285,9 @@ function build_pu(fill) {
    the native build_boss). Returns the tightly-packed (stride = w) sprite and
    records its dimensions in spr_boss_w/h[kind]. */
 function build_boss(kind) {
-  let w, h;
-  switch (kind) {
-    case 0: w = 56; h = 28; break;   /* GORGON    */
-    case 1: w = 32; h = 28; break;   /* REAPER    */
-    case 2: w = 40; h = 26; break;   /* SEEKER    */
-    case 3: w = 64; h = 30; break;   /* LEVIATHAN */
-    default: w = 48; h = 40; break;  /* OVERLORD  */
-  }
+  const dims = [[56,28],[32,28],[64,30],[40,26],[52,30],[44,24],[48,38],[54,28],
+                [58,32],[34,34],[62,32],[46,34],[42,30],[64,38],[48,40]];
+  const [w, h] = dims[kind] || dims[14];
   spr_boss_w[kind] = w; spr_boss_h[kind] = h;
   const d = new Uint8Array(w * h);
   const bset = (x, y, c) => { if (x >= 0 && x < w && y >= 0 && y < h) d[y*w+x] = c; };
@@ -304,7 +296,7 @@ function build_boss(kind) {
   const cx = w >> 1;
   let x, y;
 
-  if (kind === 0) {          /* GORGON - wide low grey battle-slab, red core */
+  if (kind === 0) {          /* GORGON - huge low wall tank */
     for (y = 0; y < h; y++) {
       const half = y < 4 ? 16 + y : y < 22 ? 20 + (y >> 3) : 22 - (y - 22);
       bhline(cx - half, cx + half, y, C_LGRAY);
@@ -328,7 +320,18 @@ function build_boss(kind) {
     brect(cx - 2, 3, cx + 1, 7, C_YELLOW);
     bset(cx - 1, 5, PAL_FIRE + 14); bset(cx, 5, PAL_FIRE + 14);
     bset(cx - 1, h - 1, C_WHITE);
-  } else if (kind === 2) {   /* SEEKER - green orbiter disc, glowing eye + spokes */
+  } else if (kind === 2) {   /* LEVIATHAN - carrier */
+    brect(3, 5, w - 4, h - 6, C_LGRAY);
+    brect(6, 2, w - 7, 6, C_DGRAY);
+    brect(cx - 8, 1, cx + 7, 12, C_LGRAY);
+    brect(cx - 5, 4, cx + 4, 9, PAL_GLOW + 7);
+    brect(9, 12, 22, h - 9, C_BLACK); brect(w - 23, 12, w - 10, h - 9, C_BLACK);
+    for (y = 12; y <= h - 9; y++) {
+      bset(9, y, C_LGREEN); bset(22, y, C_LGREEN);
+      bset(w - 23, y, C_LGREEN); bset(w - 10, y, C_LGREEN);
+    }
+    for (x = 8; x < w - 8; x += 8) bset(x, h - 3, PAL_FIRE + 10);
+  } else if (kind === 3) {   /* SEEKER - green orbiter disc, glowing eye + spokes */
     const hc = h >> 1;
     for (y = 0; y < h; y++) {
       const ay = y - hc < 0 ? hc - y : y - hc;
@@ -339,17 +342,84 @@ function build_boss(kind) {
     for (x = 4; x < w - 4; x += 5) bset(x, hc, PAL_GLOW + 12);
     brect(cx - 4, hc - 3, cx + 3, hc + 2, PAL_GLOW + 8);
     brect(cx - 2, hc - 1, cx + 1, hc, C_WHITE);
-  } else if (kind === 3) {   /* LEVIATHAN - wide grey carrier with two hangar bays */
-    brect(3, 3, w - 4, h - 5, C_LGRAY);
-    bhline(3, w - 4, 3, C_DGRAY); bhline(3, w - 4, h - 5, C_DGRAY);
-    brect(cx - 7, 1, cx + 6, 12, C_LGRAY);
-    brect(cx - 5, 3, cx + 4, 9, PAL_GLOW + 6);
-    brect(8, 11, 20, h - 8, C_BLACK); brect(w - 21, 11, w - 9, h - 8, C_BLACK);
-    for (y = 11; y <= h - 8; y++) {
-      bset(8, y, C_LGREEN); bset(20, y, C_LGREEN);
-      bset(w - 21, y, C_LGREEN); bset(w - 9, y, C_LGREEN);
+  } else if (kind === 4) {   /* MANTIS - twin claws */
+    brect(cx - 7, 6, cx + 6, 23, C_LGREEN);
+    brect(cx - 3, 11, cx + 2, 18, PAL_GLOW + 10);
+    for (y = 2; y < 24; y++) {
+      const span = 9 + (y > 12 ? ((24 - y) >> 1) : (y >> 1));
+      bhline(5, 5 + span, y, (y & 1) ? C_GREEN : C_LGREEN);
+      bhline(w - 6 - span, w - 6, y, (y & 1) ? C_GREEN : C_LGREEN);
     }
-    for (x = 6; x < w - 6; x += 8) bset(x, h - 3, PAL_FIRE + 10);
+    brect(1, 10, 11, 14, C_YELLOW); brect(w - 12, 10, w - 2, 14, C_YELLOW);
+    bset(2, 15, C_WHITE); bset(w - 3, 15, C_WHITE);
+  } else if (kind === 5) {   /* ANVIL */
+    brect(4, 2, w - 5, h - 3, C_DGRAY); brect(7, 5, w - 8, h - 6, C_LGRAY);
+    brect(cx - 6, h - 7, cx + 5, h - 3, C_RED);
+    for (x = 8; x < w - 8; x += 7) brect(x, 6, x + 2, h - 8, C_WHITE);
+    brect(0, h - 5, 7, h - 1, C_DGRAY); brect(w - 8, h - 5, w - 1, h - 1, C_DGRAY);
+  } else if (kind === 6) {   /* SERAPH */
+    for (y = 0; y < h; y++) {
+      let body = y < 8 ? 3 + (y >> 1) : y < 28 ? 8 : 16 - (y >> 1);
+      if (body < 3) body = 3;
+      bhline(cx - body, cx + body, y, C_LCYAN);
+    }
+    for (y = 5; y < h - 4; y++) {
+      const wing = y < 18 ? y : h - y;
+      bhline(2, 2 + wing, y, (y & 2) ? C_CYAN : C_LBLUE);
+      bhline(w - 3 - wing, w - 3, y, (y & 2) ? C_CYAN : C_LBLUE);
+    }
+    brect(cx - 3, 9, cx + 2, 21, C_WHITE);
+    bset(cx - 1, 4, PAL_GLOW + 14); bset(cx, 4, PAL_GLOW + 14);
+  } else if (kind === 7) {   /* NEXUS */
+    brect(4, 8, 20, 22, C_LMAG); brect(w - 21, 8, w - 5, 22, C_LMAG);
+    brect(cx - 5, 3, cx + 4, 24, C_DGRAY);
+    brect(9, 12, 15, 18, PAL_GLOW + 8); brect(w - 16, 12, w - 10, 18, PAL_GLOW + 8);
+    bhline(17, w - 18, 8, C_WHITE); bhline(17, w - 18, 22, C_WHITE);
+  } else if (kind === 8) {   /* KRAKEN */
+    brect(12, 2, w - 13, 17, C_GREEN); brect(cx - 8, 6, cx + 7, 14, C_LGREEN);
+    brect(cx - 4, 9, cx + 3, 13, C_BLACK);
+    for (x = 5; x < w - 5; x += 9)
+      for (y = 17; y < h - 1; y++) bset(x + Math.trunc(sintab[(y * 5 + x) & 63] / 16), y, (y & 1) ? C_LGREEN : C_GREEN);
+    bset(cx - 2, 5, PAL_GLOW + 14); bset(cx + 2, 5, PAL_GLOW + 14);
+  } else if (kind === 9) {   /* PHANTOM */
+    for (y = 0; y < h; y++) {
+      const half = y < 8 ? (y >> 1) + 2 : y < 25 ? 10 : 18 - (y >> 1);
+      bhline(cx - half, cx + half, y, (y & 3) ? C_LBLUE : C_DGRAY);
+      if ((y & 3) === 0) brect(cx - half + 2, y, cx + half - 2, y, 0);
+    }
+    brect(cx - 2, 8, cx + 1, 22, C_WHITE);
+    bset(cx - 5, 13, C_LCYAN); bset(cx + 5, 13, C_LCYAN);
+  } else if (kind === 10) {  /* CITADEL */
+    brect(3, 9, w - 4, h - 4, C_DGRAY);
+    for (x = 6; x < w - 6; x += 12) brect(x, 3, x + 7, 12, C_LGRAY);
+    brect(cx - 7, 5, cx + 6, 25, C_LGRAY);
+    brect(cx - 3, 10, cx + 2, 17, C_RED);
+    for (x = 9; x < w - 9; x += 10) bset(x, h - 2, PAL_FIRE + 12);
+  } else if (kind === 11) {  /* VORTEX */
+    for (y = 0; y < h; y++) {
+      const ay = Math.abs(y - (h >> 1));
+      const outer = ay < 4 ? 21 : ay < 9 ? 18 : ay < 14 ? 12 : 5;
+      const inner = ay < 5 ? 8 : ay < 9 ? 5 : 1;
+      bhline(cx - outer, cx - inner, y, C_LMAG);
+      bhline(cx + inner, cx + outer, y, C_LCYAN);
+    }
+    for (x = 6; x < w - 6; x += 8) { bset(x, h >> 1, C_WHITE); bset(w - x, (h >> 1) - 1, C_WHITE); }
+  } else if (kind === 12) {  /* BASILISK */
+    brect(6, 6, w - 7, h - 8, C_GREEN);
+    for (y = 0; y < h; y += 3) {
+      bhline(1, 8 + Math.trunc(y / 5), y, C_LGREEN);
+      bhline(w - 9 - Math.trunc(y / 5), w - 2, y, C_LGREEN);
+    }
+    brect(cx - 7, 9, cx + 6, 20, C_YELLOW);
+    brect(cx - 3, 12, cx + 2, 17, C_RED);
+    brect(cx - 1, 14, cx, 15, C_WHITE);
+  } else if (kind === 13) {  /* TITAN */
+    brect(2, 8, w - 3, h - 6, C_DGRAY);
+    brect(8, 3, w - 9, 12, C_LGRAY);
+    brect(cx - 10, 0, cx + 9, 21, C_LGRAY);
+    brect(cx - 4, 8, cx + 3, 20, PAL_FIRE + 8);
+    for (x = 6; x < w - 6; x += 9) brect(x, h - 8, x + 4, h - 2, C_RED);
+    brect(0, 16, 8, 27, C_LGRAY); brect(w - 9, 16, w - 1, 27, C_LGRAY);
   } else {                   /* OVERLORD - tall magenta finale, white spine */
     for (y = 0; y < h; y++) {
       const half = y < 8 ? 2 + y * 2 : y < 26 ? 20 : y < 34 ? 26 - (y - 26) : 14;
@@ -388,7 +458,7 @@ function sprites_init() {
   spr_powerup[PU_WAVE]    = build_pu(C_LMAG);
   spr_powerup[PU_BOMB]    = build_pu(C_LRED);
   spr_powerup[PU_SCORE]   = build_pu(C_WHITE);
-  for (let b = 0; b < 5; b++) spr_boss[b] = build_boss(b);
+  for (let b = 0; b < NBOSS; b++) spr_boss[b] = build_boss(b);
 }
 
 /* ================= input ================= */
@@ -730,19 +800,33 @@ function diff_enemy_fire_adjust() { return g_diff === DIF_EASY ? 15 : g_diff ===
 function diff_boss_hp_mul() { return g_diff === DIF_EASY ? 7 : g_diff === DIF_HARD ? 14 : 10; }
 function diff_boss_fire_cd() {
   const d = g_diff === DIF_EASY ? 8 : g_diff === DIF_HARD ? -8 : 0;
-  switch (boss.atkset) {
-    case AK_FINAL:   return 34 + d - boss.phase * 6;
-    case AK_LANCE:   return 30 + d - boss.phase * 6;
-    case AK_WALL:    return 54 + d - boss.phase * 9;
-    case AK_CARRIER: return 70 + d - boss.phase * 8;
-    default:         return 46 + d - boss.phase * 10;
+  switch (boss.kind) {
+    case 0: return 54 + d - boss.phase * 8;
+    case 1: return 30 + d - boss.phase * 6;
+    case 2: return 66 + d - boss.phase * 8;
+    case 3: return 44 + d - boss.phase * 9;
+    case 4: return 42 + d - boss.phase * 8;
+    case 5: return 62 + d - boss.phase * 10;
+    case 6: return 40 + d - boss.phase * 8;
+    case 7: return 38 + d - boss.phase * 7;
+    case 8: return 58 + d - boss.phase * 8;
+    case 9: return 34 + d - boss.phase * 7;
+    case 10: return 48 + d - boss.phase * 8;
+    case 11: return 36 + d - boss.phase * 7;
+    case 12: return 52 + d - boss.phase * 8;
+    case 13: return 50 + d - boss.phase * 8;
+    default: return 34 + d - boss.phase * 6;
   }
 }
-function boss_attack_count() { return boss.atkset === AK_FINAL ? 4 : boss.atkset === AK_CARRIER ? 2 : 3; }
+function boss_attack_count() { return (boss.kind === 2 || boss.kind === 8) ? 2 : boss.kind === 14 ? 4 : 3; }
 function boss_atk_time() {
-  let t = boss.atkset === AK_FINAL ? 112 : boss.atkset === AK_LANCE ? 84 :
-          boss.atkset === AK_WALL ? 140 : boss.atkset === AK_CARRIER ? 150 : 126;
-  t -= boss.phase * (boss.atkset === AK_WALL ? 22 : 26);
+  let t;
+  switch (boss.kind) {
+    case 0: t = 140; break; case 1: t = 84; break; case 2: t = 150; break;
+    case 5: t = 132; break; case 8: t = 142; break; case 10: t = 128; break;
+    case 13: t = 120; break; case 14: t = 112; break; default: t = 118; break;
+  }
+  t -= boss.phase * ((boss.kind === 0 || boss.kind === 5 || boss.kind === 13) ? 22 : 24);
   return Math.max(48, t);
 }
 function boss_pct_damage(div) { return Math.max(1, Math.ceil(boss.maxhp / div)); }
@@ -863,12 +947,11 @@ function start_wave() {
     set_msg('ENDURANCE +' + award);
   }
   if (wave === 60 || wave % 4 === 0) {
-    const boss_order = [1, 0, 3, 2];   /* reaper, gorgon, leviathan, seeker */
     const boss_index = Math.floor(wave / 4) - 1;
     boss.active = true; boss.entering = true;
-    boss.kind = (wave === 60 && !campaign_won) ? (BOSSDEF.length - 1) : boss_order[boss_index % 4];
+    boss.kind = boss_index < BOSSDEF.length ? boss_index : boss_index % BOSSDEF.length;
     const bd = BOSSDEF[boss.kind];
-    boss.spr = bd.spr; boss.mvt = bd.mvt; boss.atkset = bd.atkset;
+    boss.spr = bd.spr; boss.mvt = boss.kind; boss.atkset = boss.kind;
     boss.w = spr_boss_w[boss.spr]; boss.h = spr_boss_h[boss.spr];
     boss.phase = 0; boss.last_phase = 0; boss.summons = 0;
     boss.atk = 0; boss.atk_t = boss_atk_time(); boss.spin = 0;
@@ -932,7 +1015,7 @@ function free_enemy_slots() {
   return n;
 }
 function summon_escort() {
-  const type = boss.atkset === AK_SPIRAL ? E_WEAVER : E_SCOUT;
+  const type = (boss.kind === 3 || boss.kind === 11) ? E_WEAVER : E_SCOUT;
   const x0 = boss.x < 80 ? boss.x + 36 : boss.x - 28;
   for (let n = 0; n < 3; n++) spawn_one(type, x0 + n*20, -SH_EN_H - n*12, 0);
   set_msg('ESCORTS INBOUND');
@@ -1045,8 +1128,153 @@ function boss_fire() {
   const bx = boss.x + (boss.w>>1), by = boss.y + boss.h - 6;
   const dir = player.x + 8 > bx ? 1 : -1;
   const hard = g_diff === DIF_HARD;
-  switch (boss.atkset) {
-  case AK_FINAL:
+  switch (boss.kind) {
+  case 0:                                    /* GORGON */
+    if (boss.atk === 1) {
+      const gap = Math.trunc((player.x + 8 - (bx - 32)) / 10);
+      for (let k = -3; k <= 3; k++) if (k !== gap && k !== gap - 1) add_ebullet(bx + k * 10, by, 0, 3);
+    } else if (boss.atk === 2) {
+      for (let k = -4; k <= 4; k += 2) add_ebullet(bx + k * 7, by, Math.trunc(k / 2), 3);
+      if (boss.phase >= 2) add_ebullet(bx, by, 0, 5);
+    } else {
+      for (let k = -3; k <= 3; k++) add_ebullet(bx + k * 10, by, 0, (k & 1) ? 4 : 3);
+    }
+    break;
+  case 1:                                    /* REAPER */
+    if (boss.atk === 1) {
+      add_ebullet(bx-6, by, -1, 5); add_ebullet(bx+6, by, 1, 5);
+      if (boss.phase >= 1) add_ebullet(bx, by, dir, 6);
+    } else if (boss.atk === 2) {
+      add_ebullet(bx-2, by, dir, 6); add_ebullet(bx+2, by, dir, 6);
+    } else {
+      add_ebullet(bx, by, dir*2, 5); add_ebullet(bx, by, dir, 6); add_ebullet(bx, by, 0, 7);
+    }
+    break;
+  case 2:                                    /* LEVIATHAN */
+    if (boss.atk === 1) {
+      add_ebullet(boss.x + 14, by, dir, 3); add_ebullet(boss.x + boss.w - 14, by, dir, 3);
+    } else {
+      add_ebullet(bx, by, 0, 3);
+      if (boss.phase >= 1) { add_ebullet(bx - 16, by, -1, 3); add_ebullet(bx + 16, by, 1, 3); }
+    }
+    break;
+  case 3:                                    /* SEEKER */
+    if (boss.atk === 1) {
+      for (let k = 0; k < (boss.phase >= 1 ? 4 : 3); k++) {
+        const ang = (boss.spin + k * 16) & 63;
+        add_ebullet(bx, by, Math.trunc(sintab[ang] / 12), 3 + (sintab[(ang + 16) & 63] > 0 ? 1 : 0));
+      }
+      boss.spin = (boss.spin + 5) & 63;
+    } else if (boss.atk === 2) {
+      for (let k = hard ? -3 : -2; k <= (hard ? 3 : 2); k++) add_ebullet(bx, by, k, 3);
+    } else {
+      add_ebullet(bx-12, by, boss.dir, 4); add_ebullet(bx+12, by, boss.dir, 4);
+    }
+    break;
+  case 4:                                    /* MANTIS */
+    if (boss.atk === 1) {
+      for (let k = 0; k < 3; k++) {
+        add_ebullet(boss.x + 6, by - k * 3, 2, 3);
+        add_ebullet(boss.x + boss.w - 6, by - k * 3, -2, 3);
+      }
+    } else if (boss.atk === 2) {
+      add_ebullet(boss.x + 4, by, 1, 5); add_ebullet(boss.x + boss.w - 4, by, -1, 5);
+      if (boss.phase >= 2) { add_ebullet(bx - 12, by, -1, 4); add_ebullet(bx + 12, by, 1, 4); }
+    } else {
+      add_ebullet(boss.x + 3, by, 2, 4); add_ebullet(boss.x + boss.w - 3, by, -2, 4);
+      add_ebullet(bx - 18, by, 1, 3); add_ebullet(bx + 18, by, -1, 3);
+    }
+    break;
+  case 5:                                    /* ANVIL */
+    if (boss.atk === 1) {
+      for (let k = -3; k <= 3; k++) if (((Math.trunc(boss.t / 20) + k) & 1) === 0) add_ebullet(bx + k * 9, by, 0, 4);
+    } else if (boss.atk === 2) {
+      add_ebullet(bx - 18, by, -1, 3); add_ebullet(bx + 18, by, 1, 3);
+      add_ebullet(bx - 6, by, 0, 5); add_ebullet(bx + 6, by, 0, 5);
+    } else {
+      for (let k = -2; k <= 2; k++) add_ebullet(bx + k * 12, by, 0, 3);
+    }
+    break;
+  case 6:                                    /* SERAPH */
+    if (boss.atk === 1) {
+      for (let k = 0; k < 4; k++) { add_ebullet(boss.x + 4 + k * 5, by - 8, -1, 3 + Math.trunc(k / 2)); add_ebullet(boss.x + boss.w - 4 - k * 5, by - 8, 1, 3 + Math.trunc(k / 2)); }
+    } else if (boss.atk === 2) {
+      for (let k = -3; k <= 3; k += 2) add_ebullet(bx, by, k, 4);
+    } else {
+      add_ebullet(bx - 16, by, -2, 3); add_ebullet(bx + 16, by, 2, 3); add_ebullet(bx, by, 0, 5);
+    }
+    break;
+  case 7:                                    /* NEXUS */
+    if (boss.atk === 1) {
+      add_ebullet(boss.x + 12, by, 2, 3); add_ebullet(boss.x + boss.w - 12, by, -2, 3);
+      add_ebullet(boss.x + 12, by, 1, 4); add_ebullet(boss.x + boss.w - 12, by, -1, 4);
+    } else if (boss.atk === 2) {
+      add_ebullet(boss.x + 12, by, dir, 4); add_ebullet(boss.x + boss.w - 12, by, dir, 4);
+      if (boss.phase >= 1) add_ebullet(bx, by, 0, 5);
+    } else {
+      add_ebullet(boss.x + 12, by, 0, 4); add_ebullet(boss.x + boss.w - 12, by, 0, 4); add_ebullet(bx, by - 5, dir, 3);
+    }
+    break;
+  case 8:                                    /* KRAKEN */
+    if (boss.atk === 1) {
+      for (let k = 0; k < 4; k++) add_ebullet(boss.x + 8 + k * 14, by - (k & 1) * 6, (k & 1) ? 1 : -1, 3);
+    } else {
+      add_ebullet(bx - 12, by, -1, 3); add_ebullet(bx + 12, by, 1, 3);
+      if (boss.phase >= 1) add_ebullet(bx, by, dir, 4);
+    }
+    break;
+  case 9:                                    /* PHANTOM */
+    if (boss.atk === 1) {
+      add_ebullet(bx - 10, by - 4, -1, 4); add_ebullet(bx + 10, by - 4, 1, 4); add_ebullet(bx, by, dir, 5);
+    } else if (boss.atk === 2) {
+      for (let k = -2; k <= 2; k += 2) add_ebullet(bx + k * 7, by, k, 4);
+    } else {
+      add_ebullet(bx, by, dir * 2, 5); add_ebullet(bx, by, -dir * 2, 5);
+    }
+    break;
+  case 10:                                   /* CITADEL */
+    if (boss.atk === 1) {
+      for (let k = 0; k < 5; k++) if ((Math.trunc(boss.t / 18) + k) % 3 !== 1) add_ebullet(boss.x + 9 + k * 11, by, 0, 3);
+    } else if (boss.atk === 2) {
+      add_ebullet(boss.x + 12, by, -1, 4); add_ebullet(boss.x + boss.w - 12, by, 1, 4); add_ebullet(bx, by, dir, 4);
+    } else {
+      for (let k = -2; k <= 2; k++) add_ebullet(bx + k * 12, by, Math.trunc(k / 2), 3);
+    }
+    break;
+  case 11:                                   /* VORTEX */
+    if (boss.atk === 1) {
+      for (let k = 0; k < 4; k++) {
+        const ang = (boss.spin + k * 16) & 63;
+        add_ebullet(bx, by, Math.trunc(sintab[ang] / 11), 2 + (sintab[(ang + 16) & 63] > 0 ? 2 : 1));
+      }
+      boss.spin = (boss.spin + 9) & 63;
+    } else if (boss.atk === 2) {
+      add_ebullet(bx - 14, by, -2, 3); add_ebullet(bx + 14, by, 2, 3); add_ebullet(bx, by, 0, 5);
+    } else {
+      for (let k = -3; k <= 3; k += 2) add_ebullet(bx, by, k, 3);
+    }
+    break;
+  case 12:                                   /* BASILISK */
+    if (boss.atk === 1) {
+      for (let k = -3; k <= 3; k++) if (k !== 0) add_ebullet(bx + k * 8, by, 0, 4);
+    } else if (boss.atk === 2) {
+      add_ebullet(bx - 4, by, 0, 6); add_ebullet(bx, by, 0, 6); add_ebullet(bx + 4, by, 0, 6);
+      if (boss.phase >= 2) { add_ebullet(bx - 18, by, -1, 4); add_ebullet(bx + 18, by, 1, 4); }
+    } else {
+      add_ebullet(bx, by, dir, 5); add_ebullet(bx, by, dir * 2, 4);
+    }
+    break;
+  case 13:                                   /* TITAN */
+    if (boss.atk === 1) {
+      for (let k = -4; k <= 4; k += 2) add_ebullet(bx + k * 7, by, Math.trunc(k / 2), 4);
+    } else if (boss.atk === 2) {
+      add_ebullet(boss.x + 8, by, 1, 4); add_ebullet(boss.x + boss.w - 8, by, -1, 4);
+      add_ebullet(bx - 8, by, 0, 5); add_ebullet(bx + 8, by, 0, 5);
+    } else {
+      for (let k = -3; k <= 3; k++) add_ebullet(bx + k * 9, by, 0, (k & 1) ? 3 : 5);
+    }
+    break;
+  default:                                   /* OVERLORD */
     if (boss.atk === 1) {
       add_ebullet(bx-18, by-2, 2, 4); add_ebullet(bx+18, by-2, -2, 4);
       add_ebullet(bx-8, by, 1, 5); add_ebullet(bx+8, by, -1, 5);
@@ -1069,52 +1297,6 @@ function boss_fire() {
           add_ebullet(bx + k * 8, by, Math.trunc(k / 3), 3);
     }
     break;
-  case AK_LANCE:                              /* REAPER: sparse, fast, aimed */
-    if (boss.atk === 1) {
-      add_ebullet(bx-6, by, -1, 4); add_ebullet(bx+6, by, 1, 4);
-    } else if (boss.atk === 2) {
-      add_ebullet(bx-2, by, dir, 5); add_ebullet(bx+2, by, dir, 5);
-    } else {
-      add_ebullet(bx, by, dir, 6);
-      add_ebullet(bx, by, dir, 5); add_ebullet(bx, by, dir*2, 5);
-    }
-    break;
-  case AK_SPIRAL:                             /* SEEKER: rotating hazard */
-    if (boss.atk === 1) {
-      const arms = boss.phase >= 1 ? 3 : 2;
-      for (let a = 0; a < arms; a++) {
-        const ang = (boss.spin + a * 21) & 63;
-        add_ebullet(bx, by, Math.trunc(sintab[ang] / 12),
-                    2 + (sintab[(ang + 16) & 63] > 0 ? 2 : 1));
-      }
-      boss.spin = (boss.spin + 5) & 63;
-    } else if (boss.atk === 2) {
-      add_ebullet(bx-10, by, boss.dir, 3); add_ebullet(bx+10, by, boss.dir, 3);
-      if (boss.phase >= 1) add_ebullet(bx, by, dir, 4);
-    } else {
-      for (let k = hard ? -3 : -2; k <= (hard ? 3 : 2); k++) add_ebullet(bx, by, k, 3);
-    }
-    break;
-  case AK_CARRIER:                            /* LEVIATHAN: thin suppressive */
-    if (boss.atk === 1) {
-      add_ebullet(bx, by, dir, 3);
-    } else {
-      add_ebullet(bx-5, by, dir, 3); add_ebullet(bx+5, by, dir, 3);
-    }
-    break;
-  default:                                    /* GORGON wall (AK_WALL) */
-    if (boss.atk === 1) {
-      const pc = Math.trunc((player.x + 8 - (bx - 30)) / 10);
-      for (let k = -3; k <= 3; k++)
-        if (k !== pc && k !== pc - 1) add_ebullet(bx + k * 10, by, 0, 3);
-    } else if (boss.atk === 2) {
-      add_ebullet(bx, by, dir, 4); add_ebullet(bx, by, 0, 4);
-      add_ebullet(bx-12, by, -1, 3); add_ebullet(bx+12, by, 1, 3);
-    } else {
-      for (let k = -2; k <= 2; k++) add_ebullet(bx, by, k, 3);
-      if (boss.phase >= 2) add_ebullet(bx, by, 0, 5);
-    }
-    break;
   }
   snd_sfx(SFX_HIT);
 }
@@ -1125,40 +1307,104 @@ function move_toward(v, target, step) {
 }
 function boss_move() {
   const cx = (SCRW>>1) - (boss.w>>1);
-  switch (boss.mvt) {
-  case MV_CARRIER:                            /* high slow hover; launches fighters */
+  switch (boss.kind) {
+  case 0:
+    boss.x += boss.dir;
+    boss.y = 84 + (((boss.t >> 5) & 1) * 3);
+    break;
+  case 1:
+    if (boss.ty === 0) {
+      boss.y = 18 + Math.trunc((sintab[boss.t & 63] + 46) / 30);
+      boss.x = move_toward(boss.x, boss.tx, 2);
+      if (--boss.mv_t <= 0) { boss.ty = 1; boss.tx = player.x + 8 - (boss.w>>1); }
+    } else if (boss.ty === 1) {
+      boss.x = move_toward(boss.x, boss.tx, 4);
+      boss.y = move_toward(boss.y, 98, 5);
+      if (boss.y >= 98) boss.ty = 2;
+    } else {
+      boss.x += boss.dir * 3;
+      boss.y = move_toward(boss.y, 18, 4);
+      if (boss.y <= 18) { boss.ty = 0; boss.mv_t = 44 - boss.phase * 10; boss.tx = rrange(8, SCRW - boss.w - 8); }
+    }
+    break;
+  case 2:
     if (--boss.mv_t <= 0) { boss.mv_t = 70; boss.tx = (rnd() & 1) ? 8 : SCRW - boss.w - 8; }
     boss.x = move_toward(boss.x, boss.tx, 1);
     boss.y = 8 + Math.trunc((sintab[boss.t & 63] + 46) / 40);
     if (--boss.launch_t <= 0) { launch_squad(); boss.launch_t = 180 - boss.phase * 40; }
     break;
-  case MV_DIVER:                              /* swoop toward player, retreat */
-    if (boss.ty === 0) {
-      boss.y = 18 + Math.trunc((sintab[boss.t & 63] + 46) / 30);
-      boss.x = move_toward(boss.x, boss.tx, 1);
-      if (--boss.mv_t <= 0) { boss.ty = 1; boss.tx = player.x + 8 - (boss.w>>1); }
-    } else if (boss.ty === 1) {
-      boss.x = move_toward(boss.x, boss.tx, 3);
-      boss.y = move_toward(boss.y, 96, 4);
-      if (boss.y >= 96) boss.ty = 2;
-    } else {
-      boss.y = move_toward(boss.y, 18, 3);
-      if (boss.y <= 18) { boss.ty = 0; boss.mv_t = 44 - boss.phase * 10; boss.tx = rrange(8, SCRW - boss.w - 8); }
-    }
-    break;
-  case MV_ORBITER:                            /* fast mid-screen strafe */
+  case 3:
     boss.x = cx + Math.trunc(sintab[(boss.t * 2) & 63] * (3 + boss.phase) / 2);
     boss.y = 46 + Math.trunc(sintab[(boss.t + 16) & 63] / 6);
     boss.dir = sintab[(boss.t * 2 + 16) & 63] >= 0 ? 1 : -1;
     break;
-  case MV_FINALE:                             /* figure-eight core, wide y range */
+  case 4:
+    if (--boss.mv_t <= 0) {
+      boss.mv_t = 56;
+      boss.tx = boss.tx < cx ? SCRW - boss.w - 18 : 18;
+    }
+    boss.x = move_toward(boss.x, boss.tx, 3);
+    boss.y = 28 + Math.trunc(sintab[(boss.t * 2) & 63] / 9);
+    break;
+  case 5:
+    boss.x = cx + Math.trunc(sintab[(boss.t >> 1) & 63] / 3);
+    boss.y = (boss.t & 95) < 42 ? move_toward(boss.y, 96, 2 + boss.phase) : move_toward(boss.y, 64, 1);
+    if ((boss.t & 95) === 0) boss.charge = 18;
+    break;
+  case 6:
+    boss.x = cx + Math.trunc(sintab[(boss.t * 2) & 63] * 5 / 4);
+    boss.y = 18 + Math.trunc((sintab[(boss.t + 12) & 63] + 46) / 12);
+    boss.dir = sintab[(boss.t * 2 + 16) & 63] >= 0 ? 1 : -1;
+    break;
+  case 7:
+    if (--boss.mv_t <= 0) {
+      boss.mv_t = 62;
+      boss.ty = (boss.ty + 1) % 3;
+      boss.tx = boss.ty === 0 ? 22 : boss.ty === 1 ? cx : SCRW - boss.w - 22;
+    }
+    boss.x = move_toward(boss.x, boss.tx, 2);
+    boss.y = 40 + Math.trunc(sintab[(boss.t * 3) & 63] / 12);
+    break;
+  case 8:
+    boss.x = cx + sintab[boss.t & 63];
+    boss.y = 14 + Math.trunc((sintab[(boss.t * 2 + 8) & 63] + 46) / 24);
+    if (--boss.launch_t <= 0) { launch_squad(); boss.launch_t = 205 - boss.phase * 36; }
+    break;
+  case 9:
+    if (--boss.mv_t <= 0) {
+      boss.mv_t = 64 - boss.phase * 8;
+      boss.tx = rrange(18, SCRW - boss.w - 18);
+      boss.ty = rrange(22, 68);
+      boss.charge = 12;
+    }
+    boss.x = move_toward(boss.x, boss.tx, 5);
+    boss.y = move_toward(boss.y, boss.ty, 4);
+    break;
+  case 10:
+    boss.x += boss.dir;
+    if ((boss.t & 31) === 0) boss.dir = player.x + 8 > boss.x + (boss.w>>1) ? 1 : -1;
+    boss.y = 70 + (((boss.t >> 4) & 1) * 2);
+    break;
+  case 11:
+    boss.x = cx + sintab[(boss.t * 2) & 63];
+    boss.y = 44 + Math.trunc(sintab[(boss.t * 2 + 16) & 63] / 4);
+    boss.spin = (boss.spin + 2) & 63;
+    break;
+  case 12:
+    boss.tx = player.x + 8 - (boss.w>>1);
+    boss.x = move_toward(boss.x, boss.tx, 2);
+    boss.y = 24 + Math.trunc((sintab[(boss.t + 8) & 63] + 46) / 18);
+    if ((boss.t & 95) === 0) boss.charge = 18;
+    break;
+  case 13:
+    boss.x += boss.dir;
+    boss.y = (boss.t & 127) < 44 ? move_toward(boss.y, 88, 1) : move_toward(boss.y, 104, 1 + boss.phase);
+    if ((boss.t & 127) === 0) boss.charge = 18;
+    break;
+  default:
     boss.x = cx + Math.trunc(sintab[(boss.t * 2) & 63] * 3 / 2);
     boss.y = 16 + Math.trunc((sintab[(boss.t * 3 + 16) & 63] + 46) / 4);
     if ((boss.t & 127) === 0) boss.charge = 18;
-    break;
-  default:                                    /* MV_WALL: low slow bounce */
-    boss.x += boss.dir;
-    boss.y = 84 + (((boss.t >> 4) & 1) * 2);
     break;
   }
   if (boss.x < 4) { boss.x = 4; boss.dir = 1; }
@@ -1167,12 +1413,11 @@ function boss_move() {
   if (boss.y > SCRH - boss.h - 70) boss.y = SCRH - boss.h - 70;
 }
 function boss_rest_y() {
-  switch (boss.mvt) {
-    case MV_CARRIER: return 9;
-    case MV_ORBITER: return 46;
-    case MV_WALL:    return 84;
-    case MV_FINALE:  return 16;
-    default:         return 18;   /* MV_DIVER */
+  switch (boss.kind) {
+    case 0: return 84; case 1: return 18; case 2: return 9; case 3: return 46;
+    case 4: return 30; case 5: return 64; case 6: return 18; case 7: return 40;
+    case 8: return 14; case 9: return 28; case 10: return 70; case 11: return 44;
+    case 12: return 24; case 13: return 88; default: return 16;
   }
 }
 function spawn_blast(x, y, big) {
@@ -1504,7 +1749,7 @@ function update_play() {
       boss.last_phase = boss.phase;
       snd_sfx(SFX_PHASE);
       set_msg('BOSS PHASE');
-      if (boss.mvt !== MV_CARRIER && boss.mvt !== MV_DIVER
+      if ((boss.kind === 2 || boss.kind === 8)
           && boss.phase > 0 && !(boss.summons & (1 << boss.phase))) {
         boss.summons |= 1 << boss.phase;
         summon_escort();
@@ -1564,7 +1809,11 @@ function draw_dust() {
   }
 }
 const WNAME = ['CANNON', 'LASER', 'WAVE'];
-const BOSSNAME = ['GORGON', 'REAPER', 'SEEKER', 'LEVIATHAN', 'OVERLORD'];
+const BOSSNAME = [
+  'GORGON', 'REAPER', 'LEVIATHAN', 'SEEKER', 'MANTIS',
+  'ANVIL', 'SERAPH', 'NEXUS', 'KRAKEN', 'PHANTOM',
+  'CITADEL', 'VORTEX', 'BASILISK', 'TITAN', 'OVERLORD'
+];
 const DIFNAME = ['EASY', 'NORMAL', 'HARD'];
 
 function draw_hud() {

@@ -45,9 +45,11 @@ GAMEPLAY
       Elite Weaver  - leaves short bullet trails
       Elite Shooter - fires a split shot
 
-  Every fourth wave is a boss. Boss order is Warship, Dreadnought,
-  then Hive. Bosses flash before heavy attacks, show damage as their
-  health falls, and some call escorts when entering new phases.
+  Every fourth wave is a boss. The campaign has a unique boss at each
+  boss wave from W04 through W60: Gorgon, Reaper, Leviathan, Seeker,
+  Mantis, Anvil, Seraph, Nexus, Kraken, Phantom, Citadel, Vortex,
+  Basilisk, Titan, and Overlord. Bosses flash before heavy attacks,
+  show damage as their health falls, and carrier bosses launch escorts.
 
 WEAPONS
       Cannon  - all-round spread, damage 1

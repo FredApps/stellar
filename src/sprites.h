@@ -22,7 +22,7 @@
 #define SH_MSL_H  10
 
 #define NSTAGE 4                     /* enemy skins, one per 4-wave block */
-#define NBOSS  5                     /* gorgon / reaper / seeker / leviathan / overlord */
+#define NBOSS  15                    /* one authored boss per campaign boss wave */
 
 extern u8 spr_ship[3][SH_SHIP_W * SH_SHIP_H];      /* left / straight / right */
 extern u8 spr_enemy[NSTAGE][3][SH_EN_W * SH_EN_H]; /* [stage][scout/weaver/shooter] */
