@@ -24,6 +24,7 @@ void snd_mute_toggle(void);
 bool snd_muted(void);
 void snd_sfx(u8 id);
 void snd_music_set(u8 track);   /* choose + (re)start a track */
+void snd_music_game(u8 chapter);/* gameplay chapter 0..15    */
 void snd_music_start(void);     /* start in-game track        */
 void snd_music_stop(void);
 void snd_update(void);      /* call once per frame */

@@ -3,6 +3,15 @@
 All notable release changes are recorded here. GitHub release tags must have a
 matching section in this file.
 
+## Unreleased
+
+- Added sixteen distinct gameplay chapter themes: the soundtrack changes after every campaign boss.
+- Player ships now turn and fire downward when they fly above a boss; cannon, Laser, Wave, missiles,
+  exhaust, boost trails, and sprites all follow the facing direction.
+- Smoothed the opening Gorgon fight with lower HP, a longer slam tell, and difficulty-specific curtains.
+- Restored the browser Wave-Laser boost behavior and corrected difficulty-scaled score popups.
+- Removed duplicate mobile control rails and kept one fullscreen control outside the playfield.
+
 ## v0.1.3 - 2026-07-10
 
 - Redesigned all 15 campaign boss sprites (up to 72x52) with distinct silhouettes and

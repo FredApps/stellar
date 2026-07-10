@@ -143,6 +143,7 @@
   }
   @media (max-width: 720px) {
     #fsbtn { display: none; }
+    #sideMenu { display: none !important; }
     #wrap { inset: 0 0 108px 0; }
     #touchControls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
     #touchControls button { min-height: 46px; font-size: 12px; padding: 0 4px; }
@@ -151,10 +152,12 @@
   }
   @media (hover: none), (pointer: coarse) {
     #fsbtn { display: none; }
+    #sideMenu { display: none !important; }
     #touchControls { display: grid; }
     #wrap { inset: 0 0 108px 0; }
   }
   @media (orientation: landscape) and (max-height: 520px) {
+    #sideMenu { display: none !important; }
     #wrap { inset: 0 166px 0 0; }
     #touchControls {
       left: auto; right: 8px; top: 8px; bottom: 8px; width: 146px;

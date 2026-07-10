@@ -78,13 +78,17 @@ Consumers use:
 
 The PC speaker is also frame-driven. `snd_update()` runs once per game frame.
 Sound effects have priorities so explosions and power-ups are not swallowed by
-low-priority fire pips. Music resumes when the active SFX finishes.
+low-priority fire pips. Music resumes when the active SFX finishes. Sixteen
+compact gameplay note tables are selected by the number of defeated bosses,
+with title and victory tracks kept separate.
 
 ## Game Logic
 
 The game avoids dynamic allocation during play. It uses fixed pools for player
 bullets, enemy bullets, enemies, power-ups, particles, missiles, stars, and
 foreground dust. Positions are integers; sine movement uses `sintab[]`.
+Player and missile structures retain vertical direction during boss fights;
+up/down sprite variants are generated once during sprite initialization.
 
 Boss sprites are procedural pixel bitmaps built at startup into
 `spr_boss[15][72*52]` (56,160 bytes — one far object, kept under the 64 KB

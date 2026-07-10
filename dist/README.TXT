@@ -40,6 +40,9 @@ GAMEPLAY
   Shift boost raises ship speed while the BST bar has charge. The bar
   drains while boosting and recharges after a short delay.
 
+  Fly above a boss to turn the ship and all weapons downward. The ship
+  turns upward again after you cross below the boss.
+
   From wave 7, elite enemies can appear:
       Elite Scout   - tougher and faster
       Elite Weaver  - leaves short bullet trails
@@ -50,6 +53,7 @@ GAMEPLAY
   Mantis, Anvil, Seraph, Nexus, Kraken, Phantom, Citadel, Vortex,
   Basilisk, Titan, and Overlord. Bosses flash before heavy attacks,
   show damage as their health falls, and carrier bosses launch escorts.
+  The soundtrack changes after every boss.
 
 WEAPONS
       Cannon  - all-round spread, damage 1
@@ -59,7 +63,7 @@ WEAPONS
 POWER-UPS
       G  Gun       - +1 gun level (max 4)
       R  Rapid     - faster firing (timed)
-      H  Shield    - absorbs one hit
+      H  Shield    - about 10 seconds of invulnerability
       L  Life      - extra ship
       M  Missiles  - +4 homing missiles (max 30)
       Z  Laser     - switch to Laser

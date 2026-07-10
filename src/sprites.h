@@ -27,6 +27,7 @@
 #define NBOSS  15                    /* one authored boss per campaign boss wave */
 
 extern u8 spr_ship[3][SH_SHIP_W * SH_SHIP_H];      /* left / straight / right */
+extern u8 spr_ship_down[3][SH_SHIP_W * SH_SHIP_H]; /* vertically flipped      */
 extern u8 spr_enemy[NSTAGE][3][SH_EN_W * SH_EN_H]; /* [stage][scout/weaver/shooter] */
 extern u8 spr_pbullet[3][SH_PB_W * SH_PB_H]; /* cannon / laser / wave  */
 extern u8 spr_ebullet[SH_EB_W * SH_EB_H];
@@ -35,6 +36,7 @@ extern u8 spr_boss[NBOSS][BOSS_MAXW * BOSS_MAXH];
 extern i16 spr_boss_w[NBOSS], spr_boss_h[NBOSS];
 extern u8 spr_bosspod[SH_POD_W * SH_POD_H];
 extern u8 spr_missile[SH_MSL_W * SH_MSL_H];
+extern u8 spr_missile_down[SH_MSL_W * SH_MSL_H];
 
 void sprites_init(void);            /* build bitmaps + fetch ROM font */
 

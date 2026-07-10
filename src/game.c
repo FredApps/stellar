@@ -26,7 +26,7 @@ static Missile  msl[MAX_MISSILE];
 typedef struct { u8 spr; i16 hpbonus; } BossDef;
 static const BossDef BOSSDEF[NBOSS] = {
     /* spr hpbonus */
-    {  0,  40 },   /* W04 GORGON    - huge low wall tank        */
+    {  0,  10 },   /* W04 GORGON    - fair opening wall tank    */
     {  1,   0 },   /* W08 REAPER    - small diving dagger       */
     {  2,  20 },   /* W12 LEVIATHAN - high carrier              */
     {  3,   0 },   /* W16 SEEKER    - orbiting green core       */
@@ -177,7 +177,7 @@ static i16 diff_boss_fire_cd(void)
 {
     i16 d = (g_diff == DIF_EASY) ? 8 : (g_diff == DIF_HARD) ? -8 : 0;
     switch (boss.kind) {
-    case 0:  return (i16)(54 + d - boss.phase * 8);  /* GORGON */
+    case 0:  return (i16)(60 + d - boss.phase * 8);  /* GORGON */
     case 1:  return (i16)(34 + d - boss.phase * 6);  /* REAPER (dives carry the threat) */
     case 2:  return (i16)(66 + d - boss.phase * 8);  /* LEVIATHAN */
     case 3:  return (i16)(44 + d - boss.phase * 9);  /* SEEKER */
@@ -361,6 +361,7 @@ static void reset_game(void)
     player.shield = (g_diff == DIF_EASY) ? 200 : 0;   /* easy: brief invuln head-start */
     player.invuln = 0; player.firecd = 0; player.rapid = 0; player.wave_boost = 0;
     player.boost = BOOST_MAX; player.boost_cd = 0; player.boosting = FALSE;
+    player.facing_down = FALSE;
     player.combo = 0; player.combo_t = 0; player.max_combo = 0; player.alive = TRUE;
     score = 0; wave = 0; flash = 0; shk = 0;
     wave_banner = 0; msg_timer = 0; msg_text[0] = 0; ship_bank = 1;
@@ -596,43 +597,57 @@ static void add_pbullet(i16 x, i16 y, i16 dx, i16 dy, u8 kind)
     }
 }
 
+static void update_player_facing(void)
+{
+    i16 py, by;
+    if (!boss.active || boss.entering || boss.die_t > 0) {
+        player.facing_down = FALSE;
+        return;
+    }
+    py = (i16)(player.y + SH_SHIP_H / 2);
+    by = (i16)(boss.y + boss.h / 2);
+    if (!player.facing_down && py <= by - 6) player.facing_down = TRUE;
+    else if (player.facing_down && py >= by + 6) player.facing_down = FALSE;
+}
+
 /* fire pattern scales with gun level; weapon type sets the projectile feel */
 static void player_fire(void)
 {
     i16 cx = player.x + SH_SHIP_W / 2 - SH_PB_W / 2;
-    i16 cy = player.y - 4;
+    i16 dir = player.facing_down ? 1 : -1;
+    i16 cy = player.facing_down ? player.y + SH_SHIP_H : player.y - 4;
     i16 g  = player.gun;
     i16 cd;
     switch (player.wtype) {
     case WT_LASER:                                /* fast, straight, pierces */
-        add_pbullet(cx, cy - 2, 0, -12, WT_LASER);
-        if (g >= 3) { add_pbullet(cx - 6, cy, 0, -12, WT_LASER);
-                      add_pbullet(cx + 6, cy, 0, -12, WT_LASER); }
+        add_pbullet(cx, cy + dir * 2, 0, dir * 12, WT_LASER);
+        if (g >= 3) { add_pbullet(cx - 6, cy, 0, dir * 12, WT_LASER);
+                      add_pbullet(cx + 6, cy, 0, dir * 12, WT_LASER); }
         cd = 7;
         break;
     case WT_WAVE: {
         i16 spread = g + 1, k;
         if (player.wave_boost > 0) {              /* boosted: piercing beams + centre lane */
             for (k = -spread; k <= spread; k++)
-                add_pbullet(cx + k * 2, cy - 2, k, -8, WT_LASER);
-            add_pbullet(cx, cy - 4, 0, -11, WT_LASER);   /* extra fast centre lane */
+                add_pbullet(cx + k * 2, cy + dir * 2, k, dir * 8, WT_LASER);
+            add_pbullet(cx, cy + dir * 4, 0, dir * 11, WT_LASER); /* fast centre lane */
             cd = 11;
         } else {                                  /* base: narrower slow arc */
             for (k = -spread; k <= spread; k++)
-                add_pbullet(cx + k * 2, cy, k, -5, WT_WAVE);
+                add_pbullet(cx + k * 2, cy, k, dir * 5, WT_WAVE);
             cd = 15;
         }
         break; }
     default:                                      /* WT_CANNON */
         switch (g) {
-        case 1:  add_pbullet(cx - 3, cy, 0, -7, 0); add_pbullet(cx + 3, cy, 0, -7, 0); break;
-        case 2:  add_pbullet(cx, cy - 2, 0, -7, 0);
-                 add_pbullet(cx - 5, cy, 0, -7, 0); add_pbullet(cx + 5, cy, 0, -7, 0); break;
-        case 3:  add_pbullet(cx, cy - 2, 0, -7, 0);
-                 add_pbullet(cx - 5, cy, -1, -7, 0); add_pbullet(cx + 5, cy, 1, -7, 0); break;
-        default: add_pbullet(cx, cy - 2, 0, -7, 0);
-                 add_pbullet(cx - 5, cy, 0, -7, 0); add_pbullet(cx + 5, cy, 0, -7, 0);
-                 add_pbullet(cx - 7, cy + 2, -2, -7, 0); add_pbullet(cx + 7, cy + 2, 2, -7, 0); break;
+        case 1:  add_pbullet(cx - 3, cy, 0, dir * 7, 0); add_pbullet(cx + 3, cy, 0, dir * 7, 0); break;
+        case 2:  add_pbullet(cx, cy + dir * 2, 0, dir * 7, 0);
+                 add_pbullet(cx - 5, cy, 0, dir * 7, 0); add_pbullet(cx + 5, cy, 0, dir * 7, 0); break;
+        case 3:  add_pbullet(cx, cy + dir * 2, 0, dir * 7, 0);
+                 add_pbullet(cx - 5, cy, -1, dir * 7, 0); add_pbullet(cx + 5, cy, 1, dir * 7, 0); break;
+        default: add_pbullet(cx, cy + dir * 2, 0, dir * 7, 0);
+                 add_pbullet(cx - 5, cy, 0, dir * 7, 0); add_pbullet(cx + 5, cy, 0, dir * 7, 0);
+                 add_pbullet(cx - 7, cy - dir * 2, -2, dir * 7, 0); add_pbullet(cx + 7, cy - dir * 2, 2, dir * 7, 0); break;
         }
         cd = 9;
         break;
@@ -648,8 +663,8 @@ static void fire_missile(void)
     for (i = 0; i < MAX_MISSILE; i++) if (!msl[i].active) {
         msl[i].active = TRUE;
         msl[i].x = player.x + SH_SHIP_W / 2 - SH_MSL_W / 2;
-        msl[i].y = player.y - SH_MSL_H;
-        msl[i].dx = 0;
+        msl[i].y = player.facing_down ? player.y + SH_SHIP_H : player.y - SH_MSL_H;
+        msl[i].dx = 0; msl[i].dy = player.facing_down ? 4 : -4;
         player.msl--;
         snd_sfx(SFX_MISSILE);
         return;
@@ -688,16 +703,28 @@ static void boss_fire(void)
     case 0:                                   /* GORGON: horizontal lane walls */
         switch (boss.atk) {
         case 1:
-            { i16 gap = (i16)((player.x + 8 - (bx - 32)) / 10);
-              for (k = -3; k <= 3; k++)
-                  if (k != gap && k != gap - 1) add_ebullet(bx + k * 10, by, 0, 3); }
+            { i16 lo = (g_diff == DIF_EASY) ? -2 : (g_diff == DIF_HARD && boss.phase >= 1) ? -4 : -3;
+              i16 hi = (i16)-lo;
+              i16 gap = (i16)((player.x + 8 - bx) / 10);
+              i16 gap_lo = (i16)(lo + 1), gap_hi = (i16)(hi - ((g_diff == DIF_EASY) ? 1 : 0));
+              if (gap < gap_lo) gap = gap_lo;
+              if (gap > gap_hi) gap = gap_hi;
+              for (k = lo; k <= hi; k++) {
+                  bool open = (k == gap || k == gap - 1);
+                  if (g_diff == DIF_EASY && k == gap + 1) open = TRUE;
+                  if (!open) add_ebullet((i16)(bx + k * 10), by, 0, 3);
+              }
+              if (g_diff == DIF_HARD && boss.phase >= 2)
+                  add_ebullet(bx, by, dir, 5); }
             break;
         case 2:
             for (k = -4; k <= 4; k += 2) add_ebullet(bx + k * 7, by, k / 2, 3);
             if (boss.phase >= 2) add_ebullet(bx, by, 0, 5);
             break;
         default:
-            for (k = -3; k <= 3; k++) add_ebullet(bx + k * 10, by, 0, (k & 1) ? 4 : 3);
+            { i16 lo = (g_diff == DIF_EASY) ? -2 : (g_diff == DIF_HARD && boss.phase >= 1) ? -4 : -3;
+              for (k = lo; k <= -lo; k++)
+                  add_ebullet((i16)(bx + k * 10), by, 0, (k & 1) ? 4 : 3); }
             break;
         }
         break;
@@ -966,7 +993,11 @@ static void boss_move(void)
         default:                              /* rampart crawl */
             boss.x += boss.dir * (1 + (boss.phase >= 2 ? 1 : 0));
             boss.y = (i16)(84 + ((boss.t >> 5) & 1) * 3);
-            if (--boss.mv_t <= 0) { boss.ty = 1; boss.dive_t = 24; boss.charge = 24; }
+            if (--boss.mv_t <= 0) {
+                boss.ty = 1;
+                boss.dive_t = (g_diff == DIF_EASY) ? 34 : (g_diff == DIF_HARD) ? 22 : 28;
+                boss.charge = boss.dive_t;
+            }
             break;
         }
         break;
@@ -1435,21 +1466,22 @@ static void kill_enemy(Enemy *e)
     i16 cx = e->x + SH_EN_W / 2, cy = e->y + SH_EN_H / 2;
     i16 old_mult = combo_mult();
     i16 tier_up;
-    u32 base = enemy_score(e);
+    u32 base = enemy_score(e), award;
     typeburst(cx, cy, e->type, e->elite);
     spawn_blast(cx, cy, 0);
     wave_kills++;
     player.combo++; player.combo_t = 130;
     if (player.combo > player.max_combo) player.max_combo = player.combo;
     tier_up = (combo_mult() > old_mult);
-    score_add(base * combo_mult());
+    award = score_scaled(base * combo_mult());
+    score += award;
     if (tier_up) {                       /* combo milestone popup */
         char pb[8];
         sprintf(pb, "X%d", combo_mult());
         spawn_popup(cx - 8, (i16)(cy - 10), pb);
     } else if (e->elite) {               /* elite bounty popup */
         char pb[8];
-        sprintf(pb, "%lu", base * combo_mult());
+        sprintf(pb, "%lu", award);
         spawn_popup(cx - 12, (i16)(cy - 10), pb);
     }
     if (!risk_spawned && player.combo >= 10) {
@@ -1483,12 +1515,16 @@ static void boss_die(void)
 /* stage 2: the final blast once the chained explosions finish */
 static void boss_finish_death(void)
 {
+    u32 award = score_scaled(5000UL * (u32)combo_mult());
+    char pb[12];
     fireburst(boss.x + boss.w / 2, boss.y + boss.h / 2, 60);
     spawn_blast(boss.x + boss.w / 2, boss.y + boss.h / 2, 3);
-    score_add(5000 * combo_mult());
-    spawn_popup((i16)(boss.x + boss.w / 2 - 20), boss.y, "+5000");
+    score += award;
+    sprintf(pb, "+%lu", award);
+    spawn_popup((i16)(boss.x + boss.w / 2 - 20), boss.y, pb);
     flash = 8; shk = 24;
     bosses_defeated++;
+    snd_music_game((u8)bosses_defeated);
     force_powerup(boss.x + 10, boss.y + 10, PU_LIFE);
     force_powerup(boss.x + boss.w - 22, boss.y + 10, PU_BOMB);
     force_powerup(boss.x + boss.w / 2 - SH_PU_W / 2, boss.y + 20, PU_MISSILE);
@@ -1605,14 +1641,16 @@ static void update_play(void)
         if (key_pressed(SC_RIGHT) || key_pressed(SC_D)) ship_bank = 2;
         if (key_pressed(SC_UP) || key_pressed(SC_W))    player.y -= sp;
         if (key_pressed(SC_DOWN) || key_pressed(SC_S))  player.y += sp;
-        if (player.boosting && (frame & 1)) {
-            spawn_part(player.x + 4, player.y + SH_SHIP_H + 1, 0);
-            spawn_part(player.x + 12, player.y + SH_SHIP_H + 1, 0);
-        }
         if (player.x < 0) player.x = 0;
         if (player.x > SCRW - SH_SHIP_W) player.x = SCRW - SH_SHIP_W;
         if (player.y < 8) player.y = 8;
         if (player.y > SCRH - SH_SHIP_H) player.y = SCRH - SH_SHIP_H;
+        update_player_facing();
+        if (player.boosting && (frame & 1)) {
+            i16 fy = player.facing_down ? player.y - 1 : player.y + SH_SHIP_H + 1;
+            spawn_part(player.x + 4, fy, 0);
+            spawn_part(player.x + 12, fy, 0);
+        }
         if (player.firecd > 0) player.firecd--;
         if (key_pressed(SC_SPACE) && player.firecd <= 0) player_fire();
         if (key_hit(SC_CTRL)) fire_missile();
@@ -1637,21 +1675,27 @@ static void update_play(void)
         i16 tx = -1;
         long best = 0x7FFFFFFFL;
         int j;
-        /* steer toward the nearest target ahead of the missile */
-        for (j = 0; j < MAX_ENEMY; j++) if (enemy[j].active && enemy[j].y < m->y) {
+        /* steer toward the nearest target ahead in the launch direction */
+        for (j = 0; j < MAX_ENEMY; j++) if (enemy[j].active &&
+            ((m->dy < 0 && enemy[j].y < m->y) || (m->dy > 0 && enemy[j].y > m->y))) {
             long dx = (long)(enemy[j].x + SH_EN_W / 2) - m->x;
             long dy = (long)(enemy[j].y + SH_EN_H / 2) - m->y;
             long d = dx * dx + dy * dy;
             if (d < best) { best = d; tx = enemy[j].x + SH_EN_W / 2; }
         }
-        if (boss.active && boss.y < m->y) tx = boss.x + boss.w / 2;
+        if (boss.active && ((m->dy < 0 && boss.y < m->y) ||
+                           (m->dy > 0 && boss.y + boss.h > m->y)))
+            tx = boss.x + boss.w / 2;
         if (tx >= 0) {
             if (tx > m->x + 2 && m->dx < 2)  m->dx++;
             if (tx < m->x - 2 && m->dx > -2) m->dx--;
         }
-        m->x += m->dx; m->y -= 4;
-        spawn_part(m->x + SH_MSL_W / 2, m->y + SH_MSL_H, 0);  /* fire trail */
-        if (m->y < -SH_MSL_H || m->x < -8 || m->x > SCRW) { m->active = FALSE; continue; }
+        m->x += m->dx; m->y += m->dy;
+        spawn_part(m->x + SH_MSL_W / 2,
+                   (m->dy < 0) ? m->y + SH_MSL_H : m->y - 1, 0);
+        if (m->y < -SH_MSL_H || m->y > SCRH || m->x < -8 || m->x > SCRW) {
+            m->active = FALSE; continue;
+        }
         /* impact? */
         for (j = 0; j < MAX_ENEMY; j++) if (enemy[j].active &&
             overlap(m->x, m->y, SH_MSL_W, SH_MSL_H,
@@ -1671,7 +1715,8 @@ static void update_play(void)
     /* ---- player bullets ---- */
     for (i = 0; i < MAX_PBULLET; i++) if (pbul[i].active) {
         pbul[i].x += pbul[i].dx; pbul[i].y += pbul[i].dy;
-        if (pbul[i].y < -8 || pbul[i].x < -4 || pbul[i].x > SCRW) pbul[i].active = FALSE;
+        if (pbul[i].y < -8 || pbul[i].y > SCRH || pbul[i].x < -4 || pbul[i].x > SCRW)
+            pbul[i].active = FALSE;
     }
     /* ---- enemy bullets ---- */
     for (i = 0; i < MAX_EBULLET; i++) if (ebul[i].active) {
@@ -2130,7 +2175,8 @@ static void draw_play(void)
         }
     }
     for (i = 0; i < MAX_MISSILE; i++) if (msl[i].active)
-        DS(msl[i].x, msl[i].y, SH_MSL_W, SH_MSL_H, spr_missile);
+        DS(msl[i].x, msl[i].y, SH_MSL_W, SH_MSL_H,
+           (msl[i].dy > 0) ? spr_missile_down : spr_missile);
     for (i = 0; i < MAX_EBULLET; i++) if (ebul[i].active)
         DS(ebul[i].x, ebul[i].y, SH_EB_W, SH_EB_H, spr_ebullet);
     for (i = 0; i < MAX_PBULLET; i++) if (pbul[i].active)
@@ -2141,21 +2187,24 @@ static void draw_play(void)
         if (player.shield > 0 && !(player.shield < 70 && (frame & 2)))
             vga_frame(player.x - 2 + shx, player.y - 2 + shy, SH_SHIP_W + 4, SH_SHIP_H + 4,
                       (frame & 2) ? (u8)(PAL_GLOW + 14) : (u8)(PAL_GLOW + 8));
-        DS(player.x, player.y, SH_SHIP_W, SH_SHIP_H, spr_ship[ship_bank]);
+        DS(player.x, player.y, SH_SHIP_W, SH_SHIP_H,
+           player.facing_down ? spr_ship_down[ship_bank] : spr_ship[ship_bank]);
         /* animated engine flame */
         {
             u8 fc = (frame & 2) ? (u8)(PAL_FIRE + 12) : (u8)(PAL_FIRE + 8);
-            i16 fx = player.x + shx, fy = player.y + SH_SHIP_H + shy;
+            i16 fx = player.x + shx;
+            i16 fy = player.facing_down ? player.y - 1 + shy : player.y + SH_SHIP_H + shy;
+            i16 tail = player.facing_down ? -1 : 1;
             vga_pixel(fx + 3, fy, fc);  vga_pixel(fx + 12, fy, fc);
-            vga_pixel(fx + 3, fy + 1, (u8)(PAL_FIRE + 5));
-            vga_pixel(fx + 12, fy + 1, (u8)(PAL_FIRE + 5));
-            if (frame & 1) { vga_pixel(fx + 3, fy + 2, (u8)(PAL_FIRE + 3));
-                             vga_pixel(fx + 12, fy + 2, (u8)(PAL_FIRE + 3)); }
+            vga_pixel(fx + 3, fy + tail, (u8)(PAL_FIRE + 5));
+            vga_pixel(fx + 12, fy + tail, (u8)(PAL_FIRE + 5));
+            if (frame & 1) { vga_pixel(fx + 3, fy + tail * 2, (u8)(PAL_FIRE + 3));
+                             vga_pixel(fx + 12, fy + tail * 2, (u8)(PAL_FIRE + 3)); }
             if (player.boosting) {
-                vga_hline(fx + 1, fy + 3, 5, (u8)(PAL_FIRE + 11));
-                vga_hline(fx + 10, fy + 3, 5, (u8)(PAL_FIRE + 11));
-                vga_pixel(fx + 3, fy + 4, (u8)(PAL_FIRE + 6));
-                vga_pixel(fx + 12, fy + 4, (u8)(PAL_FIRE + 6));
+                vga_hline(fx + 1, fy + tail * 3, 5, (u8)(PAL_FIRE + 11));
+                vga_hline(fx + 10, fy + tail * 3, 5, (u8)(PAL_FIRE + 11));
+                vga_pixel(fx + 3, fy + tail * 4, (u8)(PAL_FIRE + 6));
+                vga_pixel(fx + 12, fy + tail * 4, (u8)(PAL_FIRE + 6));
             }
         }
     }
@@ -2352,7 +2401,7 @@ void game_run(void)
             if (key_hit(SC_DOWN) && g_diff < 2) g_diff++;
             if (key_hit(SC_H))   { help_page = 0; state = ST_HELP; }
             if (key_hit(SC_SPACE)) { reset_game(); start_wave(); state = ST_PLAY; paused = FALSE;
-                                     snd_music_set(MUS_GAME); }
+                                     snd_music_game(0); }
             if (key_hit(SC_ESC))   state = ST_QUIT;
             break;
         case ST_HELP:
@@ -2399,13 +2448,13 @@ void game_run(void)
                 hi_insert(entry_rank, name, score);
                 hi_save();
                 reset_game(); start_wave(); state = ST_PLAY; paused = FALSE;
-                snd_music_set(MUS_GAME);
+                snd_music_game(0);
             }
             break; }
         case ST_SCORES:
             if (key_hit(SC_SPACE)) state = ST_TITLE;
             if (key_hit(SC_CTRL)) { reset_game(); start_wave(); state = ST_PLAY; paused = FALSE;
-                                    snd_music_set(MUS_GAME); }
+                                    snd_music_game(0); }
             break;
         case ST_WIN:
             if (key_hit(SC_ESC)) { state = ST_TITLE; snd_music_set(MUS_TITLE); kbd_clear(); }
@@ -2414,7 +2463,7 @@ void game_run(void)
                 finish_wave();
                 start_wave();
                 state = ST_PLAY; paused = FALSE;
-                snd_music_set(MUS_GAME);
+                snd_music_game((u8)bosses_defeated);
                 kbd_clear();
             }
             break;
@@ -2493,14 +2542,15 @@ void game_selftest(const char *bmp)
     wave = 8;
     vga_set_theme(2);
     /* hand-place a representative scene */
-    player.x = 150; player.y = 150; player.shield = 300; player.gun = 3;
+    player.x = 150; player.y = 52; player.shield = 300; player.gun = 3;
     player.wtype = WT_WAVE; player.wave_boost = 200; player.msl = 12; player.bombs = 3;
     player.boost = 82; player.boost_cd = 12; player.boosting = TRUE;
+    player.facing_down = TRUE;
     player.combo = 12; player.combo_t = 100; player.max_combo = 18; ship_bank = 2;
     wave_banner = 80;
     set_msg("NO HIT +1000");
-    msl[0].active = TRUE; msl[0].x = 120; msl[0].y = 96; msl[0].dx = 1;
-    msl[1].active = TRUE; msl[1].x = 226; msl[1].y = 120; msl[1].dx = -1;
+    msl[0].active = TRUE; msl[0].x = 120; msl[0].y = 78; msl[0].dx = 1; msl[0].dy = 4;
+    msl[1].active = TRUE; msl[1].x = 226; msl[1].y = 94; msl[1].dx = -1; msl[1].dy = 4;
     powr[2].active = TRUE; powr[2].type = PU_LASER; powr[2].x = 250; powr[2].y = 150;
     powr[3].active = TRUE; powr[3].type = PU_BOMB;  powr[3].x = 44;  powr[3].y = 142;
     powr[4].active = TRUE; powr[4].type = PU_WAVE;  powr[4].x = 150; powr[4].y = 175;
@@ -2511,13 +2561,13 @@ void game_selftest(const char *bmp)
         enemy[i].base = enemy[i].x; enemy[i].hp = 2; enemy[i].vy = 1; enemy[i].t = i * 8;
         enemy[i].elite = (i == 1 || i == 4);
     }
-    boss.active = TRUE; boss.entering = FALSE; boss.kind = 2;   /* LEVIATHAN carrier */
+    boss.active = TRUE; boss.entering = FALSE; boss.kind = 0;   /* GORGON below player */
     { const BossDef *bd = &BOSSDEF[boss.kind];
       boss.spr = bd->spr; boss.mvt = boss.kind; boss.atkset = boss.kind;
       boss.w = spr_boss_w[boss.spr]; boss.h = spr_boss_h[boss.spr]; }
-    boss.x = (i16)(SCRW/2 - boss.w/2); boss.y = 40;
+    boss.x = (i16)(SCRW/2 - boss.w/2); boss.y = 108;
     boss.hp = 40; boss.maxhp = 120; boss.phase = 1; boss.charge = 12;
-    for (i = 0; i < 5; i++) { pbul[i].active = TRUE; pbul[i].kind = WT_LASER; pbul[i].x = 60 + i * 40; pbul[i].y = 100 - i * 10; pbul[i].dy = -12; pbul[i].dmg = 2; }
+    for (i = 0; i < 5; i++) { pbul[i].active = TRUE; pbul[i].kind = WT_LASER; pbul[i].x = 60 + i * 40; pbul[i].y = 74 + i * 5; pbul[i].dy = 12; pbul[i].dmg = 2; }
     for (i = 0; i < 4; i++) { ebul[i].active = TRUE; ebul[i].x = 80 + i * 50; ebul[i].y = 90 + i * 8; ebul[i].dy = 3; }
     powr[0].active = TRUE; powr[0].type = PU_SHIELD; powr[0].x = 100; powr[0].y = 120;
     powr[1].active = TRUE; powr[1].type = PU_LIFE;   powr[1].x = 200; powr[1].y = 130;
@@ -2559,9 +2609,8 @@ static void bench_write(const char *tag, u32 frames, u32 ticks)
     if (f) { fprintf(f, "%s frames %lu ticks %lu\n", tag, frames, ticks); fclose(f); }
 }
 
-/* Measure raw per-frame throughput (unpaced present, capped only by 70 Hz
-   vsync) so before/after optimisation shows compute headroom, not the 35 Hz
-   gameplay cap. scene 0 = a sustained boss fight, scene 1 = the help screen. */
+/* Measure the actual paced presentation path used by gameplay. scene 0 is a
+   sustained boss fight; scene 1 is the help screen. */
 void game_bench(int scene)
 {
     u32 __far *bios = (u32 __far *)MKFP(0x0040, 0x006C);
@@ -2578,7 +2627,7 @@ void game_bench(int scene)
             draw_stars(); draw_dust(); draw_help();
             if ((frame & 3) == 0) vga_cycle_palette();
             frame++; frames++;
-            vga_blit_novsync();
+            vga_present_paced();
         }
         bench_write("help", frames, (u32)(tnow - t0));
         return;
@@ -2596,7 +2645,7 @@ void game_bench(int scene)
         draw_stars(); draw_dust(); draw_play();
         if ((frame & 3) == 0) vga_cycle_palette();
         frame++; frames++;
-        vga_blit_novsync();
+        vga_present_paced();
     }
     bench_write("boss", frames, (u32)(tnow - t0));
 }
@@ -2727,6 +2776,32 @@ static int selftest_bossmove_run(u8 kind, u8 phase)
     return 1;
 }
 
+static int selftest_facing_run(void)
+{
+    int i;
+    reset_game();
+    memset(pbul, 0, sizeof(pbul));
+    memset(msl, 0, sizeof(msl));
+    boss.active = TRUE; boss.entering = FALSE; boss.die_t = 0;
+    boss.x = 136; boss.y = 108; boss.w = 48; boss.h = 34;
+    player.x = 152; player.y = 48; player.alive = TRUE;
+    update_player_facing();
+    if (!player.facing_down) return 0;
+    player.wtype = WT_CANNON; player.gun = 1; player.firecd = 0;
+    player_fire();
+    for (i = 0; i < MAX_PBULLET; i++) if (pbul[i].active && pbul[i].dy <= 0) return 0;
+    player.msl = 1;
+    fire_missile();
+    if (!msl[0].active || msl[0].dy <= 0) return 0;
+    player.y = 126;                       /* cross below the boss centre */
+    update_player_facing();
+    if (player.facing_down) return 0;
+    boss.active = FALSE;
+    player.facing_down = TRUE;
+    update_player_facing();
+    return player.facing_down ? 0 : 1;
+}
+
 void game_selftest_logic(void)
 {
     FILE *f = fopen("SELFTEST.TXT", "w");
@@ -2734,6 +2809,7 @@ void game_selftest_logic(void)
     reset_game();
     wave = 8;
     selftest_log(f, "SEPARATION", selftest_sep_run());
+    selftest_log(f, "DIRECTIONAL FIRE", selftest_facing_run());
     for (kind = 0; kind < NBOSS; kind++)
         for (phase = 0; phase < 3; phase++) {
             char tag[24];

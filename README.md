@@ -26,7 +26,7 @@ floppy size. The browser port is included in `web/` for local or self-hosted dep
   a boost bar, graze bonuses, combo multipliers, medals, and risk pickups.
 - Easy, Normal, and Hard difficulties share one high-score table; harder modes
   apply higher score multipliers.
-- PC speaker music and priority-mixed sound effects.
+- Sixteen PC-speaker chapter themes, changing after every boss, plus priority-mixed sound effects.
 - Top-8 high-score table saved to `HISCORE.DAT`.
 - No FPU required; it runs on a 486SX as well as a DX.
 
@@ -117,6 +117,8 @@ See [docs/BUILD.md](docs/BUILD.md) for local and CI details.
 | M | Mute or unmute |
 | Up / Down | Change difficulty on title screen |
 | Esc | Return to title or quit; quick-save/replay during high-score entry |
+
+During boss fights, flying above the boss turns the ship and all weapons downward automatically.
 
 Full gameplay reference is in [docs/GAMEPLAY.md](docs/GAMEPLAY.md).
 

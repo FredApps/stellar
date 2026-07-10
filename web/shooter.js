@@ -245,8 +245,10 @@ const PU_SHAPE = [
 "....oFFo....",".....oo....."];
 
 const spr_ship = [null, build(SH_SHIP_W, SH_SHIP_H, SHIP_ART), null];
+const spr_ship_down = [null, null, null];
 const spr_enemy = [build(SH_EN_W,SH_EN_H,SCOUT_ART), build(SH_EN_W,SH_EN_H,WEAVER_ART), build(SH_EN_W,SH_EN_H,SHOOTER_ART)];
 const spr_missile = build(SH_MSL_W, SH_MSL_H, MISSILE_ART);
+let spr_missile_down = null;
 const spr_ebullet = build(SH_EB_W, SH_EB_H, EBULLET_ART);
 const spr_pbullet = [build(SH_PB_W, SH_PB_H, PBULLET_ART), null, null];
 const spr_powerup = [];
@@ -256,7 +258,7 @@ const spr_boss_w = Array(NBOSS).fill(0), spr_boss_h = Array(NBOSS).fill(0);
 
 /* fixed campaign roster: one authored boss for each boss wave, W04..W60. */
 const BOSSDEF = [
-  { spr:0,  hpbonus: 40 }, { spr:1,  hpbonus:  0 }, { spr:2,  hpbonus: 20 },
+  { spr:0,  hpbonus: 10 }, { spr:1,  hpbonus:  0 }, { spr:2,  hpbonus: 20 },
   { spr:3,  hpbonus:  0 }, { spr:4,  hpbonus: 15 }, { spr:5,  hpbonus: 35 },
   { spr:6,  hpbonus: 10 }, { spr:7,  hpbonus: 25 }, { spr:8,  hpbonus: 30 },
   { spr:9,  hpbonus:  5 }, { spr:10, hpbonus: 45 }, { spr:11, hpbonus: 15 },
@@ -588,8 +590,16 @@ function make_banked_ships() {
     }
   for (let y = 8; y < 13; y++) { spr_ship[0][y*W+2] = C_LGRAY; spr_ship[2][y*W+13] = C_LGRAY; }
 }
+function flip_vertical(src, w, h) {
+  const dst = new Uint8Array(w*h);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) dst[y*w+x] = src[(h-1-y)*w+x];
+  return dst;
+}
 function sprites_init() {
   make_banked_ships();
+  for (let i = 0; i < 3; i++) spr_ship_down[i] = flip_vertical(spr_ship[i], SH_SHIP_W, SH_SHIP_H);
+  spr_missile_down = flip_vertical(spr_missile, SH_MSL_W, SH_MSL_H);
   spr_pbullet[WT_LASER] = build_pbul(C_LCYAN, C_WHITE);
   spr_pbullet[WT_WAVE]  = build_pbul(C_LMAG,  C_WHITE);
   spr_powerup[PU_GUN]     = build_pu(PAL_FIRE+9);
@@ -673,7 +683,7 @@ window.addEventListener('blur', clearInput);
 /* ================= audio (Web Audio: multi-voice music + ducked SFX) ================= */
 let ac = null, masterGain = null, musicGain = null, sfxGain = null, noiseBuf = null;
 let sfxMuted = false, musicMuted = false;
-let musicTrack = -1, musIdx = 0, nextNoteTime = 0, musicPaused = false;
+let musicTrack = -1, musicChapter = 0, musIdx = 0, nextNoteTime = 0, musicPaused = false;
 
 /* DOS melodies (freq Hz, duration frames @70Hz) - the arrangement adds voices */
 const title_mel = [
@@ -682,10 +692,23 @@ const title_mel = [
   [523,8],[523,8],[494,8],[440,8],[392,14],[0,3],
   [440,8],[494,10],[523,20],[0,10]];
 const game_mel = [
-  [110,7],[0,9],[110,7],[0,9],[131,7],[0,9],[110,7],[0,9],
-  [147,7],[0,9],[131,7],[0,9],[110,8],[0,24],
-  [98,7],[0,9],[110,7],[0,9],[123,7],[0,9],[131,7],[0,9],
-  [110,7],[0,9],[98,7],[0,9],[110,8],[0,24]];
+ [[110,7],[131,7],[147,8],[165,12],[0,5],[147,6],[131,6],[110,10],[0,8],[98,6],[110,6],[123,8],[131,10],[110,8],[0,8],[110,14]],
+ [[123,6],[147,6],[185,8],[165,10],[0,4],[147,6],[123,8],[98,10],[0,7],[123,6],[131,6],[147,8],[185,8],[165,10],[0,6],[123,14]],
+ [[131,6],[165,6],[196,8],[262,10],[0,5],[220,6],[196,6],[165,10],[0,7],[147,6],[165,6],[196,8],[175,8],[147,10],[0,7],[131,14]],
+ [[147,5],[185,5],[220,7],[294,10],[0,4],[262,6],[220,7],[185,9],[0,6],[147,5],[175,5],[220,7],[196,7],[175,9],[0,6],[147,13]],
+ [[98,7],[123,7],[147,7],[196,11],[0,4],[185,6],[147,7],[123,9],[0,8],[110,6],[147,6],[165,8],[147,8],[123,10],[0,6],[98,14]],
+ [[165,5],[196,5],[247,7],[330,10],[0,4],[294,6],[247,6],[196,9],[0,6],[165,5],[185,5],[220,7],[247,7],[220,9],[0,7],[165,13]],
+ [[175,6],[220,6],[262,8],[349,10],[0,5],[330,5],[262,7],[220,9],[0,6],[196,6],[220,6],[277,8],[262,8],[220,10],[0,6],[175,14]],
+ [[110,5],[165,5],[220,7],[330,9],[0,4],[294,5],[220,6],[165,9],[0,6],[123,5],[185,5],[247,7],[220,7],[165,9],[0,7],[110,13]],
+ [[196,5],[247,5],[294,7],[392,10],[0,4],[349,5],[294,6],[247,9],[0,6],[220,5],[262,5],[330,7],[294,8],[247,9],[0,7],[196,13]],
+ [[123,5],[185,5],[247,7],[370,9],[0,4],[330,5],[247,6],[185,9],[0,6],[147,5],[220,5],[294,7],[247,8],[185,9],[0,7],[123,13]],
+ [[220,5],[262,5],[330,7],[440,10],[0,4],[392,5],[330,6],[262,9],[0,6],[247,5],[294,5],[349,7],[330,8],[262,9],[0,7],[220,13]],
+ [[147,5],[220,5],[294,7],[440,9],[0,4],[392,5],[294,6],[220,9],[0,6],[175,5],[262,5],[349,7],[294,8],[220,9],[0,7],[147,13]],
+ [[247,5],[294,5],[370,7],[494,10],[0,4],[440,5],[370,6],[294,9],[0,6],[262,5],[330,5],[392,7],[370,8],[294,9],[0,7],[247,13]],
+ [[165,4],[247,4],[330,6],[494,9],[0,4],[440,5],[330,6],[247,8],[0,5],[196,4],[294,4],[392,6],[330,7],[247,8],[0,6],[165,12]],
+ [[262,4],[330,4],[392,6],[523,9],[0,4],[494,5],[392,5],[330,8],[0,5],[294,4],[349,4],[440,6],[392,7],[330,8],[0,6],[262,12]],
+ [[294,4],[370,4],[440,6],[587,9],[0,3],[523,5],[440,5],[370,8],[0,5],[330,4],[392,4],[494,6],[440,7],[370,8],[0,6],[294,12]]
+];
 const win_mel = [
   [523,8],[659,8],[784,8],[1047,16],[0,4],
   [988,8],[880,8],[784,12],[659,8],[784,18],[0,6],
@@ -781,6 +804,10 @@ function snd_music_set(track) {
     nextNoteTime = ac.currentTime + 0.08;
   }
 }
+function snd_music_game(chapter) {
+  musicChapter = clamp(Math.floor(chapter || 0), 0, 15);
+  snd_music_set(MUS_GAME);
+}
 function snd_music_stop() { musicTrack = -1; }
 
 /* Pause/resume audio to mirror the DOS build's snd_silence() on pause.
@@ -798,7 +825,7 @@ function snd_pause(p) {
 function scheduleMusic() {
   if (!ac || musicMuted || musicPaused || musicTrack < 0) return;
   if (nextNoteTime < ac.currentTime - 0.1) nextNoteTime = ac.currentTime + 0.05; /* tab-switch snap */
-  const mel = musicTrack === MUS_TITLE ? title_mel : musicTrack === MUS_WIN ? win_mel : game_mel;
+  const mel = musicTrack === MUS_TITLE ? title_mel : musicTrack === MUS_WIN ? win_mel : game_mel[musicChapter];
   while (nextNoteTime < ac.currentTime + 0.30) {
     const [f, frames] = mel[musIdx];
     const dur = frames / LOGIC_HZ;   /* frame-locked tempo, like snd_update() */
@@ -813,8 +840,9 @@ function scheduleMusic() {
         /* in-game groove, transposed up an octave so it's audible on small
            speakers (the DOS pulse sat at 98-147 Hz = near-inaudible in a
            browser). Lead + fifth + original bass body + hat. */
-        voice('triangle', f * 2, f * 2, t, dur, 0.24, musicGain);              /* audible lead */
-        voice('square', f * 3, f * 3, t, dur * 0.5, 0.06, musicGain);          /* fifth-ish sparkle */
+        const leadType = (musicChapter % 3 === 0) ? 'triangle' : (musicChapter % 3 === 1) ? 'square' : 'sawtooth';
+        voice(leadType, f * 2, f * 2, t, dur, 0.20, musicGain);                 /* audible lead */
+        voice('square', f * (musicChapter & 1 ? 2.5 : 3), f * (musicChapter & 1 ? 2.5 : 3), t, dur * 0.5, 0.05, musicGain);
         voice('square', f, f, t, dur, 0.16, musicGain);                        /* bass body    */
         if ((musIdx & 3) === 0) noise(t, 0.03, 0.05, 4000, 4000, 'highpass', musicGain); /* hat */
       }
@@ -826,7 +854,7 @@ function scheduleMusic() {
 
 /* ================= high scores (server + local fallback) ================= */
 const HS_KEY = 'stellar_assault_hiscores';
-const SCORE_API = '/api/stellar-scores.ashx';
+const SCORE_API = 'api/stellar-scores.ashx';
 const DEF_NAMES = ['ACE','NOVA','COMET','ORION','VEGA','PULSAR','ROOKIE','CADET','DRIFT','PIXEL'];
 let g_hi = [];
 let scoreStatus = 'SYNCING SCORES';
@@ -957,7 +985,7 @@ function diff_boss_hp_mul() { return g_diff === DIF_EASY ? 7 : g_diff === DIF_HA
 function diff_boss_fire_cd() {
   const d = g_diff === DIF_EASY ? 8 : g_diff === DIF_HARD ? -8 : 0;
   switch (boss.kind) {
-    case 0: return 54 + d - boss.phase * 8;
+    case 0: return 60 + d - boss.phase * 8;
     case 1: return 34 + d - boss.phase * 6;    /* dives carry the threat */
     case 2: return 66 + d - boss.phase * 8;
     case 3: return 44 + d - boss.phase * 9;
@@ -1053,8 +1081,9 @@ function reset_game() {
   player.gun = GUN_MIN; player.wtype = WT_CANNON;
   player.msl = 5; player.bombs = g_diff === DIF_HARD ? 1 : 2;
   player.shield = g_diff === DIF_EASY ? 200 : 0;   /* easy: brief invuln head-start */
-  player.invuln = 0; player.firecd = 0; player.rapid = 0;
+  player.invuln = 0; player.firecd = 0; player.rapid = 0; player.wave_boost = 0;
   player.boost = BOOST_MAX; player.boost_cd = 0; player.boosting = false;
+  player.facing_down = false;
   player.combo = 0; player.combo_t = 0; player.max_combo = 0; player.alive = true;
   score = 0; wave = 0; flash = 0; shk = 0;
   wave_banner = 0; msg_timer = 0; msg_text = ''; ship_bank = 1;
@@ -1258,32 +1287,48 @@ function add_pbullet(x, y, dx, dy, kind) {
   if (b) { b.active = true; b.x = x; b.y = y; b.dx = dx; b.dy = dy; b.kind = kind;
            b.grazed = 0; b.dmg = kind === WT_LASER ? 2 : 1; }
 }
+function update_player_facing() {
+  if (!boss.active || boss.entering || boss.die_t > 0) {
+    player.facing_down = false;
+    return;
+  }
+  const py = player.y + (SH_SHIP_H>>1), by = boss.y + (boss.h>>1);
+  if (!player.facing_down && py <= by - 6) player.facing_down = true;
+  else if (player.facing_down && py >= by + 6) player.facing_down = false;
+}
 function player_fire() {
   const cx = player.x + (SH_SHIP_W>>1) - (SH_PB_W>>1);
-  const cy = player.y - 4;
+  const dir = player.facing_down ? 1 : -1;
+  const cy = player.facing_down ? player.y + SH_SHIP_H : player.y - 4;
   const g = player.gun;
   let cd;
   switch (player.wtype) {
   case WT_LASER:
-    add_pbullet(cx, cy-2, 0, -12, WT_LASER);
-    if (g >= 3) { add_pbullet(cx-6, cy, 0, -12, WT_LASER); add_pbullet(cx+6, cy, 0, -12, WT_LASER); }
+    add_pbullet(cx, cy+dir*2, 0, dir*12, WT_LASER);
+    if (g >= 3) { add_pbullet(cx-6, cy, 0, dir*12, WT_LASER); add_pbullet(cx+6, cy, 0, dir*12, WT_LASER); }
     cd = 7;
     break;
   case WT_WAVE: {
     const spread = g + 1;
-    for (let k = -spread; k <= spread; k++) add_pbullet(cx + k*3, cy, k, -5, WT_WAVE);
-    cd = 15;
+    if (player.wave_boost > 0) {
+      for (let k = -spread; k <= spread; k++) add_pbullet(cx + k*2, cy+dir*2, k, dir*8, WT_LASER);
+      add_pbullet(cx, cy+dir*4, 0, dir*11, WT_LASER);
+      cd = 11;
+    } else {
+      for (let k = -spread; k <= spread; k++) add_pbullet(cx + k*2, cy, k, dir*5, WT_WAVE);
+      cd = 15;
+    }
     break; }
   default:
     switch (g) {
-    case 1: add_pbullet(cx-3, cy, 0, -7, 0); add_pbullet(cx+3, cy, 0, -7, 0); break;
-    case 2: add_pbullet(cx, cy-2, 0, -7, 0);
-            add_pbullet(cx-5, cy, 0, -7, 0); add_pbullet(cx+5, cy, 0, -7, 0); break;
-    case 3: add_pbullet(cx, cy-2, 0, -7, 0);
-            add_pbullet(cx-5, cy, -1, -7, 0); add_pbullet(cx+5, cy, 1, -7, 0); break;
-    default: add_pbullet(cx, cy-2, 0, -7, 0);
-             add_pbullet(cx-5, cy, 0, -7, 0); add_pbullet(cx+5, cy, 0, -7, 0);
-             add_pbullet(cx-7, cy+2, -2, -7, 0); add_pbullet(cx+7, cy+2, 2, -7, 0); break;
+    case 1: add_pbullet(cx-3, cy, 0, dir*7, 0); add_pbullet(cx+3, cy, 0, dir*7, 0); break;
+    case 2: add_pbullet(cx, cy+dir*2, 0, dir*7, 0);
+            add_pbullet(cx-5, cy, 0, dir*7, 0); add_pbullet(cx+5, cy, 0, dir*7, 0); break;
+    case 3: add_pbullet(cx, cy+dir*2, 0, dir*7, 0);
+            add_pbullet(cx-5, cy, -1, dir*7, 0); add_pbullet(cx+5, cy, 1, dir*7, 0); break;
+    default: add_pbullet(cx, cy+dir*2, 0, dir*7, 0);
+             add_pbullet(cx-5, cy, 0, dir*7, 0); add_pbullet(cx+5, cy, 0, dir*7, 0);
+             add_pbullet(cx-7, cy-dir*2, -2, dir*7, 0); add_pbullet(cx+7, cy-dir*2, 2, dir*7, 0); break;
     }
     cd = 9;
     break;
@@ -1296,8 +1341,8 @@ function fire_missile() {
   for (const m of mslA) if (!m.active) {
     m.active = true;
     m.x = player.x + (SH_SHIP_W>>1) - (SH_MSL_W>>1);
-    m.y = player.y - SH_MSL_H;
-    m.dx = 0;
+    m.y = player.facing_down ? player.y + SH_SHIP_H : player.y - SH_MSL_H;
+    m.dx = 0; m.dy = player.facing_down ? 4 : -4;
     player.msl--;
     snd_sfx(SFX_MISSILE);
     return;
@@ -1323,13 +1368,21 @@ function boss_fire() {
   switch (boss.kind) {
   case 0:                                    /* GORGON */
     if (boss.atk === 1) {
-      const gap = Math.trunc((player.x + 8 - (bx - 32)) / 10);
-      for (let k = -3; k <= 3; k++) if (k !== gap && k !== gap - 1) add_ebullet(bx + k * 10, by, 0, 3);
+      const lo = g_diff === DIF_EASY ? -2 : (g_diff === DIF_HARD && boss.phase >= 1) ? -4 : -3;
+      const gapLo = lo + 1, gapHi = -lo - (g_diff === DIF_EASY ? 1 : 0);
+      const gap = clamp(Math.trunc((player.x + 8 - bx) / 10), gapLo, gapHi);
+      for (let k = lo; k <= -lo; k++) {
+        let open = k === gap || k === gap - 1;
+        if (g_diff === DIF_EASY && k === gap + 1) open = true;
+        if (!open) add_ebullet(bx + k * 10, by, 0, 3);
+      }
+      if (g_diff === DIF_HARD && boss.phase >= 2) add_ebullet(bx, by, dir, 5);
     } else if (boss.atk === 2) {
       for (let k = -4; k <= 4; k += 2) add_ebullet(bx + k * 7, by, Math.trunc(k / 2), 3);
       if (boss.phase >= 2) add_ebullet(bx, by, 0, 5);
     } else {
-      for (let k = -3; k <= 3; k++) add_ebullet(bx + k * 10, by, 0, (k & 1) ? 4 : 3);
+      const lo = g_diff === DIF_EASY ? -2 : (g_diff === DIF_HARD && boss.phase >= 1) ? -4 : -3;
+      for (let k = lo; k <= -lo; k++) add_ebullet(bx + k * 10, by, 0, (k & 1) ? 4 : 3);
     }
     break;
   case 1:                                    /* REAPER */
@@ -1525,7 +1578,11 @@ function boss_move() {
     } else {                                /* rampart crawl */
       boss.x += boss.dir * (1 + (boss.phase >= 2 ? 1 : 0));
       boss.y = 84 + (((boss.t >> 5) & 1) * 3);
-      if (--boss.mv_t <= 0) { boss.ty = 1; boss.dive_t = 24; boss.charge = 24; }
+      if (--boss.mv_t <= 0) {
+        boss.ty = 1;
+        boss.dive_t = g_diff === DIF_EASY ? 34 : g_diff === DIF_HARD ? 22 : 28;
+        boss.charge = boss.dive_t;
+      }
     }
     break;
   case 1:                                   /* REAPER: dives through the player band */
@@ -1869,7 +1926,8 @@ function apply_powerup(type) {
     case PU_SHIELD:  player.shield = 350; break;   /* ~10 s of invulnerability at 35 FPS */
     case PU_LIFE:    if (player.lives < 9) player.lives++; break;
     case PU_MISSILE: player.msl = Math.min(30, player.msl + 4); break;
-    case PU_LASER:   player.wtype = WT_LASER; break;
+    case PU_LASER:   if (player.wtype === WT_WAVE) player.wave_boost = 350;
+                     else player.wtype = WT_LASER; break;
     case PU_WAVE:    player.wtype = WT_WAVE; break;
     case PU_BOMB:    if (player.bombs < 10) player.bombs++; break;
     case PU_SCORE:   score_add(500 + wave * 50); break;
@@ -1942,9 +2000,10 @@ function kill_enemy(e) {
   player.combo++; player.combo_t = 130;
   if (player.combo > player.max_combo) player.max_combo = player.combo;
   const tier_up = combo_mult() > old_mult;
-  score_add(enemy_score(e) * combo_mult());
+  const award = score_scaled(enemy_score(e) * combo_mult());
+  score += award;
   if (tier_up) spawn_popup(cx - 8, cy - 10, 'X' + combo_mult());               /* combo milestone */
-  else if (e.elite) spawn_popup(cx - 12, cy - 10, String(enemy_score(e) * combo_mult()));  /* bounty */
+  else if (e.elite) spawn_popup(cx - 12, cy - 10, String(award));  /* bounty */
   if (!risk_spawned && player.combo >= 10) {
     drop_powerup(rrange(96, 212), rrange(38, 72), PU_SCORE);
     risk_spawned = 1;
@@ -1970,12 +2029,14 @@ function boss_die() {
 }
 /* stage 2: the final blast once the chained explosions finish */
 function boss_finish_death() {
+  const award = score_scaled(5000 * combo_mult());
   fireburst(boss.x + (boss.w>>1), boss.y + (boss.h>>1), 60);
   spawn_blast(boss.x + (boss.w>>1), boss.y + (boss.h>>1), 3);
-  score_add(5000 * combo_mult());
-  spawn_popup(boss.x + (boss.w>>1) - 20, boss.y, '+5000');
+  score += award;
+  spawn_popup(boss.x + (boss.w>>1) - 20, boss.y, '+' + award);
   flash = 8; shk = 24;
   bosses_defeated++;
+  snd_music_game(bosses_defeated);
   force_powerup(boss.x + 10, boss.y + 10, PU_LIFE);
   force_powerup(boss.x + boss.w - 22, boss.y + 10, PU_BOMB);
   force_powerup(boss.x + (boss.w>>1) - (SH_PU_W>>1), boss.y + 20, PU_MISSILE);
@@ -2052,12 +2113,14 @@ function update_play() {
       }
       if (Math.abs(dy) > 1) player.y += Math.max(-sp, Math.min(sp, dy));
     }
-    if (player.boosting && (frame & 1)) {
-      spawn_part(player.x+4, player.y+SH_SHIP_H+1, 0);
-      spawn_part(player.x+12, player.y+SH_SHIP_H+1, 0);
-    }
     player.x = Math.max(0, Math.min(SCRW - SH_SHIP_W, player.x));
     player.y = Math.max(8, Math.min(SCRH - SH_SHIP_H, player.y));
+    update_player_facing();
+    if (player.boosting && (frame & 1)) {
+      const fy = player.facing_down ? player.y-1 : player.y+SH_SHIP_H+1;
+      spawn_part(player.x+4, fy, 0);
+      spawn_part(player.x+12, fy, 0);
+    }
     if (player.firecd > 0) player.firecd--;
     if (key_pressed('SPACE') && player.firecd <= 0) player_fire();
     if (key_hit('CTRL')) fire_missile();
@@ -2065,6 +2128,7 @@ function update_play() {
     if (player.invuln > 0) player.invuln--;
     if (player.shield > 0) player.shield--;
     if (player.rapid > 0) player.rapid--;
+    if (player.wave_boost > 0) player.wave_boost--;
     if (player.combo_t > 0 && --player.combo_t === 0) player.combo = 0;
     if (wave_banner > 0) wave_banner--;
   }
@@ -2077,19 +2141,20 @@ function update_play() {
   /* homing missiles */
   for (const m of mslA) if (m.active) {
     let tx = -1, best = Infinity;
-    for (const e of enemies) if (e.active && e.y < m.y) {
+    for (const e of enemies) if (e.active && ((m.dy < 0 && e.y < m.y) || (m.dy > 0 && e.y > m.y))) {
       const dx = e.x + (SH_EN_W>>1) - m.x, dy = e.y + (SH_EN_H>>1) - m.y;
       const d = dx*dx + dy*dy;
       if (d < best) { best = d; tx = e.x + (SH_EN_W>>1); }
     }
-    if (boss.active && boss.y < m.y) tx = boss.x + (boss.w>>1);
+    if (boss.active && ((m.dy < 0 && boss.y < m.y) || (m.dy > 0 && boss.y + boss.h > m.y)))
+      tx = boss.x + (boss.w>>1);
     if (tx >= 0) {
       if (tx > m.x + 2 && m.dx < 2) m.dx++;
       if (tx < m.x - 2 && m.dx > -2) m.dx--;
     }
-    m.x += m.dx; m.y -= 4;
-    spawn_part(m.x + (SH_MSL_W>>1), m.y + SH_MSL_H, 0);
-    if (m.y < -SH_MSL_H || m.x < -8 || m.x > SCRW) { m.active = false; continue; }
+    m.x += m.dx; m.y += m.dy;
+    spawn_part(m.x + (SH_MSL_W>>1), m.dy < 0 ? m.y + SH_MSL_H : m.y - 1, 0);
+    if (m.y < -SH_MSL_H || m.y > SCRH || m.x < -8 || m.x > SCRW) { m.active = false; continue; }
     let hit = false;
     for (const e of enemies) if (e.active &&
         overlap(m.x, m.y, SH_MSL_W, SH_MSL_H, e.x, e.y, SH_EN_W, SH_EN_H)) {
@@ -2104,7 +2169,7 @@ function update_play() {
   /* player bullets */
   for (const b of pbul) if (b.active) {
     b.x += b.dx; b.y += b.dy;
-    if (b.y < -8 || b.x < -4 || b.x > SCRW) b.active = false;
+    if (b.y < -8 || b.y > SCRH || b.x < -4 || b.x > SCRW) b.active = false;
   }
   /* enemy bullets + graze */
   for (const b of ebul) if (b.active) {
@@ -2279,8 +2344,9 @@ function draw_hud() {
   const wv = 'WAVE ' + wave;
   text_draw(SCRW - 8*wv.length - 4, 2, wv, C_LCYAN);
   text_draw(4, 190, 'SH' + player.lives, C_LGREEN);
-  text_draw(36, 190, WNAME[player.wtype] + player.gun,
-            player.wtype === WT_LASER ? C_LCYAN : player.wtype === WT_WAVE ? C_LMAG : PAL_FIRE+11);
+  const weapon = player.wtype === WT_WAVE && player.wave_boost > 0 ? 'WAVE*' + player.gun : WNAME[player.wtype] + player.gun;
+  text_draw(36, 190, weapon,
+            player.wtype === WT_LASER ? C_LCYAN : player.wtype === WT_WAVE ? (player.wave_boost > 0 ? C_WHITE : C_LMAG) : PAL_FIRE+11);
   text_draw(124, 190, 'M' + pad2(player.msl), C_LGRAY);
   text_draw(156, 190, 'B' + pad2(player.bombs), C_LRED);
   text_draw(184, 190, 'BST', C_LGRAY);
@@ -2472,7 +2538,7 @@ function draw_play() {
                PAL_FIRE + 8 + ((frame >> (boss.phase >= 2 ? 0 : 1)) & 7));
     }
   }
-  for (const m of mslA) if (m.active) DS(m.x, m.y, SH_MSL_W, SH_MSL_H, spr_missile);
+  for (const m of mslA) if (m.active) DS(m.x, m.y, SH_MSL_W, SH_MSL_H, m.dy > 0 ? spr_missile_down : spr_missile);
   for (const b of ebul) if (b.active) DS(b.x, b.y, SH_EB_W, SH_EB_H, spr_ebullet);
   for (const b of pbul) if (b.active) DS(b.x, b.y, SH_PB_W, SH_PB_H, spr_pbullet[b.kind]);
   if (player.alive && !(player.invuln > 0 && frame & 2)) {
@@ -2480,15 +2546,16 @@ function draw_play() {
     if (player.shield > 0 && !(player.shield < 70 && (frame & 2)))
       vga_frame(player.x-2+shx, player.y-2+shy, SH_SHIP_W+4, SH_SHIP_H+4,
                 frame & 2 ? PAL_GLOW+14 : PAL_GLOW+8);
-    DS(player.x, player.y, SH_SHIP_W, SH_SHIP_H, spr_ship[ship_bank]);
+    DS(player.x, player.y, SH_SHIP_W, SH_SHIP_H, player.facing_down ? spr_ship_down[ship_bank] : spr_ship[ship_bank]);
     const fc = frame & 2 ? PAL_FIRE+12 : PAL_FIRE+8;
-    const fx = player.x + shx, fy = player.y + SH_SHIP_H + shy;
+    const fx = player.x + shx, fy = player.facing_down ? player.y - 1 + shy : player.y + SH_SHIP_H + shy;
+    const tail = player.facing_down ? -1 : 1;
     vga_pixel(fx+3, fy, fc); vga_pixel(fx+12, fy, fc);
-    vga_pixel(fx+3, fy+1, PAL_FIRE+5); vga_pixel(fx+12, fy+1, PAL_FIRE+5);
-    if (frame & 1) { vga_pixel(fx+3, fy+2, PAL_FIRE+3); vga_pixel(fx+12, fy+2, PAL_FIRE+3); }
+    vga_pixel(fx+3, fy+tail, PAL_FIRE+5); vga_pixel(fx+12, fy+tail, PAL_FIRE+5);
+    if (frame & 1) { vga_pixel(fx+3, fy+tail*2, PAL_FIRE+3); vga_pixel(fx+12, fy+tail*2, PAL_FIRE+3); }
     if (player.boosting) {
-      vga_hline(fx+1, fy+3, 5, PAL_FIRE+11); vga_hline(fx+10, fy+3, 5, PAL_FIRE+11);
-      vga_pixel(fx+3, fy+4, PAL_FIRE+6); vga_pixel(fx+12, fy+4, PAL_FIRE+6);
+      vga_hline(fx+1, fy+tail*3, 5, PAL_FIRE+11); vga_hline(fx+10, fy+tail*3, 5, PAL_FIRE+11);
+      vga_pixel(fx+3, fy+tail*4, PAL_FIRE+6); vga_pixel(fx+12, fy+tail*4, PAL_FIRE+6);
     }
   }
   for (const p of popup) if (p.active)
@@ -2610,7 +2677,7 @@ function begin_run() {
   reset_game(); start_wave();
   state = ST_PLAY; paused = false;
   pointerAim.active = false; pointerAim.id = null;   /* don't yank the ship to a stale cursor */
-  snd_music_set(MUS_GAME);
+  snd_music_game(0);
 }
 function syncEntryInput(focus) {
   if (!nameInput) return;
@@ -2714,7 +2781,7 @@ function step() {
       finish_wave();
       start_wave();
       state = ST_PLAY; paused = false;
-      snd_music_set(MUS_GAME);
+      snd_music_game(bosses_defeated);
       clearInput();
     }
     break;
@@ -2936,9 +3003,8 @@ function updateAudioButtons() {
   if (m) m.textContent = musicMuted ? 'MUSIC OFF' : 'MUSIC';
   if (s) s.textContent = sfxMuted ? 'SFX OFF' : 'SFX';
 }
-/* Side menu shows on every menu screen. During active play it stays visible
-   only on a windowed desktop (spec); it hides in fullscreen, and on touch
-   devices where the on-screen touch controls take over. */
+/* Touch layouts own the whole control surface. Desktop keeps the menu rail on
+   menu screens only, never during play or fullscreen. */
 const coarsePointer = window.matchMedia('(hover: none), (pointer: coarse)');
 const fsMedia = window.matchMedia('(display-mode: fullscreen)');
 /* True for both the Fullscreen API (requestFullscreen) and native/F11 browser
@@ -2950,7 +3016,7 @@ function isViewportFullscreen() {
 }
 function updateSideMenu() {
   const inPlay = state === ST_PLAY && !paused;
-  const hide = inPlay && (isViewportFullscreen() || coarsePointer.matches);
+  const hide = coarsePointer.matches || window.innerWidth <= 720 || inPlay || isViewportFullscreen();
   document.body.classList.toggle('hide-side-menu', hide);
 }
 

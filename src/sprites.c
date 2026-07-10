@@ -4,6 +4,7 @@
 #include "vga.h"
 
 u8 spr_ship[3][SH_SHIP_W * SH_SHIP_H];
+u8 spr_ship_down[3][SH_SHIP_W * SH_SHIP_H];
 u8 spr_enemy[NSTAGE][3][SH_EN_W * SH_EN_H];
 u8 spr_pbullet[3][SH_PB_W * SH_PB_H];
 u8 spr_ebullet[SH_EB_W * SH_EB_H];
@@ -12,6 +13,7 @@ u8 spr_boss[NBOSS][BOSS_MAXW * BOSS_MAXH];
 i16 spr_boss_w[NBOSS], spr_boss_h[NBOSS];
 u8 spr_bosspod[SH_POD_W * SH_POD_H];
 u8 spr_missile[SH_MSL_W * SH_MSL_H];
+u8 spr_missile_down[SH_MSL_W * SH_MSL_H];
 
 /* ---- ROM 8x8 font pointer (INT 10h AX=1130h BH=03h -> ES:BP) ---- */
 extern u8 __far *get_rom8x8(void);
@@ -57,6 +59,14 @@ static void build(u8 *dst, i16 w, i16 h, const char *rows[])
     for (y = 0; y < h; y++)
         for (x = 0; x < w; x++)
             dst[y * w + x] = legend(rows[y][x]);
+}
+
+static void flip_vertical(u8 *dst, const u8 *src, i16 w, i16 h)
+{
+    i16 x, y;
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w; x++)
+            dst[y * w + x] = src[(h - 1 - y) * w + x];
 }
 
 static const char *SHIP[16] = {
@@ -653,6 +663,8 @@ void sprites_init(void)
 {
     int s;
     make_banked_ships();
+    for (s = 0; s < 3; s++)
+        flip_vertical(spr_ship_down[s], spr_ship[s], SH_SHIP_W, SH_SHIP_H);
     for (s = 0; s < NSTAGE; s++) {
         build_enemy_stage(spr_enemy[s][E_SCOUT],   SCOUT,   (u8)s);
         build_enemy_stage(spr_enemy[s][E_WEAVER],  WEAVER,  (u8)s);
@@ -663,6 +675,7 @@ void sprites_init(void)
     build_pbul(spr_pbullet[WT_WAVE],  C_LMAG,  C_WHITE);
     build(spr_ebullet, SH_EB_W, SH_EB_H, EBULLET);
     build(spr_missile, SH_MSL_W, SH_MSL_H, MISSILE);
+    flip_vertical(spr_missile_down, spr_missile, SH_MSL_W, SH_MSL_H);
     build_pu(spr_powerup[PU_GUN],     PAL_FIRE + 9);   /* orange  */
     build_pu(spr_powerup[PU_RAPID],   C_YELLOW);
     build_pu(spr_powerup[PU_SHIELD],  C_LBLUE);

@@ -127,7 +127,7 @@ typedef struct { bool active; u8 type; i16 x, y, t; } Powerup;
 /* col==0 means fire-ramp particle that fades with life */
 typedef struct { bool active; i16 x, y, dx, dy, life; u8 col; } Particle;
 
-typedef struct { bool active; i16 x, y, dx; } Missile;
+typedef struct { bool active; i16 x, y, dx, dy; } Missile;
 
 typedef struct { i16 x, y; u8 layer, col; } Star;
 
@@ -149,6 +149,7 @@ typedef struct {
     i16 combo_t;         /* frames until combo resets       */
     i16 max_combo;       /* best combo this run             */
     bool boosting;
+    bool facing_down;    /* boss is below: rotate and fire down */
     bool alive;
 } Player;
 

@@ -42,6 +42,9 @@ Hold Shift to raise ship speed from 3 to 5 pixels per frame. Boost starts full a
 drains 2 per frame, and recharges 1 per frame after a 25-frame delay. It cannot restart until
 at least 12 energy is available. The HUD shows the `BST` bar beside missiles and bombs.
 
+During a boss fight, crossing above the boss turns the ship downward. Cannon, Laser, Wave, and
+homing missiles all follow the new facing; the ship turns upward again after crossing below the boss.
+
 ## Waves And Enemies
 
 Normal waves spawn `5 + wave` enemies, capped at 18. Hard adds 4 more. Enemies can arrive as a
@@ -100,7 +103,8 @@ silhouette, movement language, and attack script:
 | W56 | Titan | Quake slams with bullet columns; steamrolls when enraged |
 | W60 | Overlord | Finale: figure-eight, then Phantom blinks, then Seeker orbit + Reaper dives |
 
-The W60 Overlord ends the campaign with the win screen and custom win theme.
+The opening sector and each of the fifteen post-boss sectors have distinct music. The W60 Overlord
+ends the campaign with the win screen and custom win theme.
 
 Defeating a boss drops three pickups — a Life, a Bomb, and a Missile pack. Unused bombs after boss
 waves grant +400 each.

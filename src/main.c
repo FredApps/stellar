@@ -13,7 +13,7 @@
 /* Diagnostic: run the music sequencer + sfx mixer headless and log the
    emitted speaker frequency each frame to AUDIO.TXT.  Sections:
      A: title track alone
-     B: game track alone (background density check)
+     B00-B15: all game chapter tracks
      C: game track with sfx injected (preemption + resume check)
      D: fire sfx spam followed by one explosion (priority check)
      E: new pickup/combo/phase effects
@@ -21,17 +21,19 @@
 static int audiodump(void)
 {
     FILE *f = fopen("AUDIO.TXT", "w");
-    int i;
+    int i, chapter;
     if (!f) return 1;
     snd_init();
     fprintf(f, "A\n");
     snd_music_set(MUS_TITLE);
     for (i = 0; i < 120; i++) { snd_update(); fprintf(f, "%d\n", snd_last_freq()); }
-    fprintf(f, "B\n");
-    snd_music_set(MUS_GAME);
-    for (i = 0; i < 160; i++) { snd_update(); fprintf(f, "%d\n", snd_last_freq()); }
+    for (chapter = 0; chapter < 16; chapter++) {
+        fprintf(f, "B%02d\n", chapter);
+        snd_music_game((u8)chapter);
+        for (i = 0; i < 64; i++) { snd_update(); fprintf(f, "%d\n", snd_last_freq()); }
+    }
     fprintf(f, "C\n");
-    snd_music_set(MUS_GAME);
+    snd_music_game(7);
     for (i = 0; i < 90; i++) {
         if (i == 30) snd_sfx(SFX_EXPLODE);
         snd_update();
