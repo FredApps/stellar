@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Open Watcom
         uses: open-watcom/setup-watcom@v1
@@ -50,7 +50,7 @@ jobs:
           Compress-Archive -Path release\STELLAR.EXE,release\STELLAR.IMG,release\README.TXT -DestinationPath release\Stellar-MS-DOS.zip -Force
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Stellar-MS-DOS
           path: |
@@ -62,7 +62,7 @@ jobs:
 
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body_path: release/RELEASE_NOTES.md
           files: |
