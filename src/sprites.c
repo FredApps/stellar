@@ -10,6 +10,7 @@ u8 spr_ebullet[SH_EB_W * SH_EB_H];
 u8 spr_powerup[PU_COUNT][SH_PU_W * SH_PU_H];
 u8 spr_boss[NBOSS][BOSS_MAXW * BOSS_MAXH];
 i16 spr_boss_w[NBOSS], spr_boss_h[NBOSS];
+u8 spr_bosspod[SH_POD_W * SH_POD_H];
 u8 spr_missile[SH_MSL_W * SH_MSL_H];
 
 /* ---- ROM 8x8 font pointer (INT 10h AX=1130h BH=03h -> ES:BP) ---- */
@@ -204,237 +205,388 @@ static void brect(u8 *d, i16 w, i16 h, i16 x0, i16 y0, i16 x1, i16 y1, u8 c)
     i16 y;
     for (y = y0; y <= y1; y++) bhline(d, w, h, x0, x1, y, c);
 }
+static void bvline(u8 *d, i16 w, i16 h, i16 x, i16 y0, i16 y1, u8 c)
+{
+    i16 y;
+    if (y0 < 0) y0 = 0;
+    if (y1 > h - 1) y1 = h - 1;
+    for (y = y0; y <= y1; y++) bset(d, w, h, x, y, c);
+}
+static void bdisc(u8 *d, i16 w, i16 h, i16 cx, i16 cy, i16 r, u8 c)
+{
+    i16 x, y;
+    i16 r2 = (i16)(r * r);
+    for (y = -r; y <= r; y++)
+        for (x = -r; x <= r; x++)
+            if (x * x + y * y <= r2) bset(d, w, h, cx + x, cy + y, c);
+}
+/* annulus: pixels with r0 <= dist <= r1 */
+static void bring(u8 *d, i16 w, i16 h, i16 cx, i16 cy, i16 r0, i16 r1, u8 c)
+{
+    i16 x, y;
+    i16 a = (i16)(r0 * r0), b = (i16)(r1 * r1);
+    for (y = -r1; y <= r1; y++)
+        for (x = -r1; x <= r1; x++) {
+            i16 d2 = (i16)(x * x + y * y);
+            if (d2 >= a && d2 <= b) bset(d, w, h, cx + x, cy + y, c);
+        }
+}
+/* checkerboard fill for shaded armour */
+static void bdither(u8 *d, i16 w, i16 h, i16 x0, i16 y0, i16 x1, i16 y1, u8 c)
+{
+    i16 x, y;
+    for (y = y0; y <= y1; y++)
+        for (x = x0; x <= x1; x++)
+            if (((x ^ y) & 1) == 0) bset(d, w, h, x, y, c);
+}
+/* author the left half, mirror onto the right (symmetric hulls) */
+static void bmirror(u8 *d, i16 w, i16 h)
+{
+    i16 x, y;
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w / 2; x++)
+            d[y * w + (w - 1 - x)] = d[y * w + x];
+}
 
 /* Each roster slot has its own silhouette, footprint and palette so bosses
-   read as different ships, not recolours. dims returned via *ow/*oh. */
+   read as different ships, not recolours. dims returned via *ow/*oh.
+   Several bosses lean on run-time overlays in game.c (KRAKEN tentacles,
+   VORTEX orbs, SEEKER/BASILISK tracking pupils, NEXUS pods). */
 static void build_boss(u8 *dst, u8 kind, i16 *ow, i16 *oh)
 {
     i16 x, y, cx, w, h;
+    memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
     switch (kind) {
 
-    case 0: {   /* GORGON - huge low wall tank, red core, gun ports */
-        w = 56; h = 28; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        for (y = 0; y < h; y++) {
-            i16 half = (y < 4) ? 16 + y : (y < 22) ? 20 + (y >> 3) : 22 - (y - 22);
-            bhline(dst, w, h, cx - half, cx + half, y, C_LGRAY);
-            bset(dst, w, h, cx - half, y, C_DGRAY);
-            bset(dst, w, h, cx + half, y, C_DGRAY);
+    case 0: {   /* GORGON - serrated siege wall, exposed fire trench */
+        w = 68; h = 30; cx = w / 2;
+        for (x = 0; x < w; x += 8) {                       /* serrated crown */
+            bhline(dst, w, h, x + 2, x + 5, 2, C_LGRAY);
+            bhline(dst, w, h, x + 1, x + 6, 3, C_LGRAY);
+            bhline(dst, w, h, x, x + 7, 4, C_LGRAY);
+            bset(dst, w, h, (i16)(x + 3), 1, C_YELLOW);    /* sensor tips */
         }
-        bhline(dst, w, h, 4, w - 5, 6, C_DGRAY);          /* armour seams */
-        bhline(dst, w, h, 3, w - 4, 19, C_DGRAY);
-        brect(dst, w, h, cx - 6, 8, cx + 5, 18, PAL_FIRE + 6);  /* core */
-        brect(dst, w, h, cx - 6, 8, cx + 5, 8, C_RED);
-        brect(dst, w, h, cx - 6, 18, cx + 5, 18, C_RED);
-        for (x = 6; x < w - 6; x += 6) bset(dst, w, h, x, h - 3, PAL_FIRE + 12); /* gun ports */
-        bset(dst, w, h, 8, 4, C_YELLOW);  bset(dst, w, h, w - 9, 4, C_YELLOW);
+        brect(dst, w, h, 0, 5, w - 1, 12, C_LGRAY);        /* upper armour band */
+        brect(dst, w, h, 1, 13, w - 2, 19, C_DGRAY);       /* mid band          */
+        bdither(dst, w, h, 2, 20, w - 3, 26, C_LGRAY);     /* lower skirt       */
+        bhline(dst, w, h, 0, w - 1, 5, C_WHITE);
+        for (x = 10; x < w - 10; x += 12) bvline(dst, w, h, x, 6, 18, C_DGRAY);
+        brect(dst, w, h, cx - 11, 8, cx + 10, 17, C_BLACK);      /* core trench */
+        brect(dst, w, h, cx - 10, 9, cx + 9, 16, PAL_FIRE + 6);
+        brect(dst, w, h, cx - 6, 11, cx + 5, 14, PAL_FIRE + 11);
+        bhline(dst, w, h, cx - 11, cx + 10, 8, C_RED);
+        bhline(dst, w, h, cx - 11, cx + 10, 17, C_RED);
+        for (x = 6; x < w - 6; x += 8) {                   /* gun ports */
+            bset(dst, w, h, x, 27, PAL_FIRE + 12);
+            bset(dst, w, h, x, 28, PAL_FIRE + 8);
+        }
         break; }
 
-    case 1: {   /* REAPER - small crimson dagger pointing DOWN, swept wings */
-        w = 32; h = 28; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        for (y = 0; y < h; y++) {
-            i16 half = 13 - (i16)((y * 11) / h);          /* wide top -> point */
+    case 1: {   /* REAPER - asymmetric crescent scythe, skull cockpit */
+        w = 34; h = 33; cx = w / 2;
+        for (y = 0; y < 30; y++) {                         /* curved blade */
+            i16 x0 = (i16)(2 + (y * y) / 45);
+            i16 x1 = (i16)(x0 + 11 - y / 3);
+            if (x1 <= x0) x1 = (i16)(x0 + 1);
+            bhline(dst, w, h, x0, x1, y, C_LRED);
+            bset(dst, w, h, x0, y, C_WHITE);               /* honed edge */
+            bset(dst, w, h, x1, y, C_RED);
+        }
+        bhline(dst, w, h, 21, 22, 30, C_LRED);
+        bset(dst, w, h, 22, 31, C_WHITE);                  /* blade point */
+        bvline(dst, w, h, 26, 4, 26, C_DGRAY);             /* shaft */
+        bvline(dst, w, h, 27, 3, 27, C_LGRAY);
+        bvline(dst, w, h, 28, 4, 26, C_DGRAY);
+        brect(dst, w, h, 12, 2, 26, 4, C_RED);             /* crossbar */
+        brect(dst, w, h, 23, 6, 31, 13, C_LGRAY);          /* skull */
+        bset(dst, w, h, 25, 9, PAL_FIRE + 13); bset(dst, w, h, 29, 9, PAL_FIRE + 13);
+        bhline(dst, w, h, 24, 30, 12, C_DGRAY);            /* jaw */
+        bset(dst, w, h, 25, 13, C_DGRAY); bset(dst, w, h, 27, 13, C_DGRAY);
+        bset(dst, w, h, 29, 13, C_DGRAY);
+        brect(dst, w, h, 26, 27, 28, 31, PAL_FIRE + 9);    /* shaft engine */
+        break; }
+
+    case 2: {   /* LEVIATHAN - full-width strike carrier, runway deck */
+        w = 72; h = 32; cx = w / 2;
+        brect(dst, w, h, 2, 8, w - 3, 26, C_LGRAY);        /* deck */
+        bhline(dst, w, h, 2, w - 3, 8, C_WHITE);
+        brect(dst, w, h, 0, 12, 3, 24, C_DGRAY);           /* prow wedges */
+        brect(dst, w, h, w - 4, 12, w - 1, 24, C_DGRAY);
+        for (x = 6; x < w - 6; x += 6)                     /* runway stripes */
+            bset(dst, w, h, x, 17, (x & 4) ? C_WHITE : C_YELLOW);
+        brect(dst, w, h, 8, 11, 24, 23, C_BLACK);          /* twin hangar maws */
+        brect(dst, w, h, w - 25, 11, w - 9, 23, C_BLACK);
+        for (y = 11; y <= 23; y++) {                       /* green guide lights */
+            bset(dst, w, h, 8, y, C_LGREEN);  bset(dst, w, h, 24, y, C_LGREEN);
+            bset(dst, w, h, w - 25, y, C_LGREEN); bset(dst, w, h, w - 9, y, C_LGREEN);
+        }
+        for (x = 10; x < 24; x += 4) bset(dst, w, h, x, 23, C_GREEN);
+        for (x = w - 23; x < w - 9; x += 4) bset(dst, w, h, x, 23, C_GREEN);
+        brect(dst, w, h, cx - 7, 2, cx + 6, 10, C_DGRAY);  /* bridge tower */
+        brect(dst, w, h, cx - 4, 4, cx + 3, 8, PAL_GLOW + 9);
+        bhline(dst, w, h, cx - 7, cx + 6, 2, C_LGRAY);
+        bhline(dst, w, h, 4, w - 5, 27, C_DGRAY);
+        for (x = 8; x < w - 8; x += 8) {                   /* engine row */
+            bset(dst, w, h, x, 28, PAL_FIRE + 11);
+            bset(dst, w, h, x, 29, PAL_FIRE + 7);
+        }
+        break; }
+
+    case 3: {   /* SEEKER - concentric glow rings around a watching eye */
+        w = 40; h = 40; cx = w / 2;
+        bring(dst, w, h, cx, 20, 18, 19, PAL_GLOW + 5);
+        bring(dst, w, h, cx, 20, 13, 14, PAL_GLOW + 9);
+        bring(dst, w, h, cx, 20, 8, 9, PAL_GLOW + 13);
+        bdisc(dst, w, h, cx, 20, 6, C_GREEN);
+        bdisc(dst, w, h, cx, 20, 4, C_LGREEN);
+        bvline(dst, w, h, cx, 1, 6, C_LGREEN);             /* four ring spokes */
+        bvline(dst, w, h, cx, 33, 38, C_LGREEN);
+        bhline(dst, w, h, 1, 6, 20, C_LGREEN);
+        bhline(dst, w, h, 33, 38, 20, C_LGREEN);
+        bset(dst, w, h, cx, 1, C_WHITE); bset(dst, w, h, cx, 38, C_WHITE);
+        bset(dst, w, h, 1, 20, C_WHITE); bset(dst, w, h, 38, 20, C_WHITE);
+        /* pupil socket: the pupil itself tracks the player at draw time */
+        brect(dst, w, h, cx - 2, 18, cx + 1, 21, C_BLACK);
+        break; }
+
+    case 4: {   /* MANTIS - oversized serrated claw crescents, thin thorax */
+        w = 60; h = 30; cx = w / 2;
+        brect(dst, w, h, cx - 4, 6, cx + 3, 25, C_GREEN);  /* thorax */
+        brect(dst, w, h, cx - 2, 10, cx + 1, 20, PAL_GLOW + 10);
+        bset(dst, w, h, cx - 3, 4, C_LGREEN); bset(dst, w, h, cx - 4, 3, C_LGREEN);
+        for (y = 1; y < 27; y++) {                         /* claw crescent */
+            i16 dy2 = (i16)(y - 14);
+            i16 span = (i16)(17 - (dy2 * dy2) / 12);
+            if (span < 3) span = 3;
+            bhline(dst, w, h, 2, 2 + span, y, (y & 1) ? C_GREEN : C_LGREEN);
+        }
+        for (y = 3; y < 25; y += 3) {                      /* serrated teeth */
+            i16 dy2 = (i16)(y - 14);
+            i16 span = (i16)(17 - (dy2 * dy2) / 12);
+            if (span < 3) span = 3;
+            bset(dst, w, h, (i16)(3 + span), y, C_LGREEN);
+            bset(dst, w, h, (i16)(4 + span), y, C_GREEN);
+        }
+        bset(dst, w, h, 20, 13, C_YELLOW); bset(dst, w, h, 20, 15, C_YELLOW);
+        bset(dst, w, h, 21, 14, C_WHITE);                  /* claw-tip node */
+        bmirror(dst, w, h);
+        break; }
+
+    case 5: {   /* ANVIL - industrial crush press with hazard chevrons */
+        w = 48; h = 30; cx = w / 2;
+        brect(dst, w, h, 2, 1, w - 3, 8, C_DGRAY);         /* top girder */
+        bhline(dst, w, h, 2, w - 3, 1, C_LGRAY);
+        for (x = 5; x < w - 5; x += 6) bset(dst, w, h, x, 4, C_WHITE);
+        for (x = 10; x <= w - 12; x += 12) {               /* piston shafts */
+            bvline(dst, w, h, x, 9, 20, C_LGRAY);
+            bvline(dst, w, h, (i16)(x + 1), 9, 20, C_DGRAY);
+        }
+        brect(dst, w, h, 4, 21, w - 5, 27, C_RED);         /* crush plate */
+        bhline(dst, w, h, 4, w - 5, 21, C_LRED);
+        for (x = 4; x <= w - 5; x++)                       /* hazard chevrons */
+            if (((x >> 2) & 1) == 0) bset(dst, w, h, x, 24, C_YELLOW);
+        bhline(dst, w, h, 6, w - 7, 28, C_DGRAY);
+        break; }
+
+    case 6: {   /* SERAPH - haloed sentinel, layered feather ribs */
+        w = 56; h = 48; cx = w / 2;
+        bhline(dst, w, h, cx - 6, cx + 5, 1, PAL_GLOW + 14);          /* halo */
+        bset(dst, w, h, cx - 7, 2, PAL_GLOW + 11); bset(dst, w, h, cx + 6, 2, PAL_GLOW + 11);
+        brect(dst, w, h, cx - 3, 4, cx + 2, 9, C_WHITE);              /* head */
+        for (y = 10; y < 44; y++) {                                   /* robe body */
+            i16 half = (y < 30) ? 5 : (i16)(5 + (y - 30) / 3);
+            bhline(dst, w, h, cx - half, cx + half, y, C_LCYAN);
+        }
+        bvline(dst, w, h, cx - 1, 12, 40, C_WHITE);
+        bvline(dst, w, h, cx, 12, 40, C_WHITE);
+        brect(dst, w, h, cx - 2, 22, cx + 1, 28, PAL_GLOW + 12);      /* heart core */
+        for (x = 0; x < 5; x++) {                                     /* feather ribs */
+            i16 rx = (i16)(cx - 9 - x * 4);
+            i16 top = (i16)(12 + x * 2);
+            i16 bot = (i16)(42 - x * 4);
+            bvline(dst, w, h, rx, top, bot, (u8)(PAL_GLOW + 13 - x * 2));
+            bvline(dst, w, h, (i16)(rx - 1), top, bot, (u8)(PAL_GLOW + 11 - x * 2));
+            bset(dst, w, h, rx, (i16)(bot + 1), C_WHITE);             /* feather tip */
+        }
+        bmirror(dst, w, h);
+        break; }
+
+    case 7: {   /* NEXUS - narrow core spire; fire-pods orbit at run time */
+        w = 22; h = 28; cx = w / 2;
+        for (y = 0; y < h; y++) {                          /* diamond spire */
+            i16 dy2 = (i16)(y - h / 2);
+            i16 ay = (dy2 < 0) ? (i16)-dy2 : dy2;
+            i16 half = (i16)(9 - (ay * 2) / 3);
             if (half < 1) half = 1;
-            bhline(dst, w, h, cx - half, cx + half, y, C_LRED);
-            bset(dst, w, h, cx - half, y, C_RED);
-            bset(dst, w, h, cx + half, y, C_RED);
+            bhline(dst, w, h, cx - half, cx + half, y, C_DGRAY);
+            bset(dst, w, h, cx - half, y, C_LMAG);
+            bset(dst, w, h, cx + half, y, C_LMAG);
         }
-        for (y = 5; y < 12; y++) {                        /* swept-back wings */
-            i16 s = 14 - (y - 5);
-            bhline(dst, w, h, cx - s, cx - s + 2, y, C_RED);
-            bhline(dst, w, h, cx + s - 2, cx + s, y, C_RED);
-        }
-        brect(dst, w, h, cx - 2, 3, cx + 1, 7, C_YELLOW); /* cockpit eye */
-        bset(dst, w, h, cx - 1, 5, PAL_FIRE + 14);
-        bset(dst, w, h, cx, 5, PAL_FIRE + 14);
-        bset(dst, w, h, cx - 1, h - 1, C_WHITE);          /* piercing tip */
+        brect(dst, w, h, cx - 3, 10, cx + 2, 17, PAL_GLOW + 8);
+        brect(dst, w, h, cx - 1, 12, cx, 15, C_WHITE);
+        bset(dst, w, h, cx - 1, 0, C_WHITE); bset(dst, w, h, cx, 0, C_WHITE);
+        bset(dst, w, h, cx - 1, h - 1, C_WHITE); bset(dst, w, h, cx, h - 1, C_WHITE);
         break; }
 
-    case 2: {   /* LEVIATHAN - wide carrier with twin open hangar bays */
+    case 8: {   /* KRAKEN - bulbous mantle + eyes; tentacles animate at run time */
         w = 64; h = 30; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        brect(dst, w, h, 3, 5, w - 4, h - 6, C_LGRAY);
-        brect(dst, w, h, 6, 2, w - 7, 6, C_DGRAY);
-        brect(dst, w, h, cx - 8, 1, cx + 7, 12, C_LGRAY);
-        brect(dst, w, h, cx - 5, 4, cx + 4, 9, PAL_GLOW + 7);
-        brect(dst, w, h, 9, 12, 22, h - 9, C_BLACK);
-        brect(dst, w, h, w - 23, 12, w - 10, h - 9, C_BLACK);
-        for (y = 12; y <= h - 9; y++) {
-            bset(dst, w, h, 9, y, C_LGREEN); bset(dst, w, h, 22, y, C_LGREEN);
-            bset(dst, w, h, w - 23, y, C_LGREEN); bset(dst, w, h, w - 10, y, C_LGREEN);
+        for (y = 0; y < h; y++) {                          /* dome profile */
+            i16 half = (y < 4) ? (i16)(14 + y * 4) : (y < 22) ? 30 : (i16)(30 - (y - 22) * 3);
+            if (half > 30) half = 30;
+            if (half < 6) half = 6;
+            bhline(dst, w, h, cx - half, cx + half, y, C_GREEN);
+            bset(dst, w, h, cx - half, y, C_LGREEN);
+            bset(dst, w, h, cx + half, y, C_LGREEN);
         }
-        for (x = 8; x < w - 8; x += 8) bset(dst, w, h, x, h - 3, PAL_FIRE + 10);
+        bdither(dst, w, h, cx - 24, 3, cx + 24, 10, PAL_NEB + 10);   /* sheen */
+        bdisc(dst, w, h, cx - 12, 15, 4, C_WHITE);         /* eyes */
+        bdisc(dst, w, h, cx + 12, 15, 4, C_WHITE);
+        bdisc(dst, w, h, cx - 12, 15, 2, C_BLACK);
+        bdisc(dst, w, h, cx + 12, 15, 2, C_BLACK);
+        bset(dst, w, h, cx - 13, 14, C_LCYAN); bset(dst, w, h, cx + 11, 14, C_LCYAN);
+        brect(dst, w, h, cx - 3, 22, cx + 2, 27, C_BLACK); /* beak */
+        bset(dst, w, h, cx - 1, 27, C_YELLOW); bset(dst, w, h, cx, 27, C_YELLOW);
         break; }
 
-    case 3: {   /* SEEKER - green orbiter disc with a glowing eye + spokes */
-        w = 40; h = 26; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
+    case 9: {   /* PHANTOM - hollow spectre: dashed outline, dissolving tail */
+        w = 34; h = 40; cx = w / 2;
         for (y = 0; y < h; y++) {
-            i16 dy = y - (h / 2);
-            i16 ay = dy < 0 ? -dy : dy;
-            i16 half = (ay < 4) ? 18 : (ay < 8) ? 15 : (ay < 11) ? 9 : 3;
-            bhline(dst, w, h, cx - half, cx + half, y, C_LGREEN);
-            bset(dst, w, h, cx - half, y, C_GREEN);
-            bset(dst, w, h, cx + half, y, C_GREEN);
+            i16 half = (y < 10) ? (i16)(3 + y) : (y < 28) ? 13 : (i16)(13 - (y - 28));
+            if (half < 2) half = 2;
+            if ((y & 3) != 3) {                            /* gaps in the outline */
+                bset(dst, w, h, cx - half, y, (y & 1) ? C_LBLUE : C_LCYAN);
+                bset(dst, w, h, cx + half, y, (y & 1) ? C_LBLUE : C_LCYAN);
+            }
         }
-        for (x = 4; x < w - 4; x += 5) {                  /* rotating-spoke hint */
-            bset(dst, w, h, x, h / 2, PAL_GLOW + 12);
-        }
-        brect(dst, w, h, cx - 4, h / 2 - 3, cx + 3, h / 2 + 2, PAL_GLOW + 8);
-        brect(dst, w, h, cx - 2, h / 2 - 1, cx + 1, h / 2, C_WHITE);   /* eye */
+        bvline(dst, w, h, cx - 1, 6, 26, C_WHITE);         /* inner wisp */
+        bvline(dst, w, h, cx, 6, 26, C_WHITE);
+        bset(dst, w, h, cx - 5, 14, (u8)(PAL_GLOW + 13));  /* hollow eyes */
+        bset(dst, w, h, cx + 5, 14, (u8)(PAL_GLOW + 13));
+        bset(dst, w, h, cx - 5, 15, (u8)(PAL_GLOW + 13));
+        bset(dst, w, h, cx + 5, 15, (u8)(PAL_GLOW + 13));
+        bdither(dst, w, h, cx - 8, 30, cx + 8, 38, C_LBLUE); /* dissolving tail */
         break; }
 
-    case 4: {   /* MANTIS - twin claws, empty center gap */
-        w = 52; h = 30; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        brect(dst, w, h, cx - 7, 6, cx + 6, 23, C_LGREEN);
-        brect(dst, w, h, cx - 3, 11, cx + 2, 18, PAL_GLOW + 10);
-        for (y = 2; y < 24; y++) {
-            i16 span = 9 + (y > 12 ? (24 - y) / 2 : y / 2);
-            bhline(dst, w, h, 5, 5 + span, y, (y & 1) ? C_GREEN : C_LGREEN);
-            bhline(dst, w, h, w - 6 - span, w - 6, y, (y & 1) ? C_GREEN : C_LGREEN);
+    case 10: {  /* CITADEL - crenellated battlement, three turret towers */
+        w = 72; h = 34; cx = w / 2;
+        brect(dst, w, h, 1, 14, w - 2, 30, C_DGRAY);       /* main wall */
+        bhline(dst, w, h, 1, w - 2, 14, C_LGRAY);
+        bdither(dst, w, h, 3, 24, w - 4, 29, C_LGRAY);     /* stonework */
+        for (x = 2; x < w - 2; x += 8)                     /* merlons */
+            brect(dst, w, h, x, 10, (i16)(x + 4), 14, C_LGRAY);
+        for (x = 0; x < 3; x++) {                          /* turret towers */
+            i16 tx = (x == 0) ? 8 : (x == 1) ? (i16)(cx - 6) : (i16)(w - 20);
+            brect(dst, w, h, tx, 2, (i16)(tx + 11), 16, C_LGRAY);
+            bhline(dst, w, h, tx, (i16)(tx + 11), 2, C_WHITE);
+            brect(dst, w, h, (i16)(tx + 3), 6, (i16)(tx + 8), 9, C_BLACK);
+            brect(dst, w, h, (i16)(tx + 4), 7, (i16)(tx + 7), 8, C_RED);
+            bset(dst, w, h, (i16)(tx + 5), 17, PAL_FIRE + 12);
         }
-        brect(dst, w, h, 1, 10, 11, 14, C_YELLOW);
-        brect(dst, w, h, w - 12, 10, w - 2, 14, C_YELLOW);
-        bset(dst, w, h, 2, 15, C_WHITE); bset(dst, w, h, w - 3, 15, C_WHITE);
+        brect(dst, w, h, cx - 5, 20, cx + 4, 29, C_BLACK); /* gate */
+        brect(dst, w, h, cx - 4, 21, cx + 3, 28, PAL_FIRE + 7);
+        for (x = 6; x < w - 6; x += 10) bset(dst, w, h, x, 31, PAL_FIRE + 10);
         break; }
 
-    case 5: {   /* ANVIL - squat armoured block, vertical press */
-        w = 44; h = 24; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        brect(dst, w, h, 4, 2, w - 5, h - 3, C_DGRAY);
-        brect(dst, w, h, 7, 5, w - 8, h - 6, C_LGRAY);
-        brect(dst, w, h, cx - 6, h - 7, cx + 5, h - 3, C_RED);
-        for (x = 8; x < w - 8; x += 7) brect(dst, w, h, x, 6, x + 2, h - 8, C_WHITE);
-        brect(dst, w, h, 0, h - 5, 7, h - 1, C_DGRAY);
-        brect(dst, w, h, w - 8, h - 5, w - 1, h - 1, C_DGRAY);
+    case 11: {  /* VORTEX - split mag/cyan ring; orbs orbit at run time */
+        w = 44; h = 44; cx = w / 2;
+        bring(dst, w, h, cx, 22, 15, 20, C_LMAG);
+        for (y = 0; y < h; y++)                            /* right half cyan */
+            for (x = cx; x < w; x++)
+                if (dst[y * w + x] == C_LMAG) dst[y * w + x] = C_LCYAN;
+        bring(dst, w, h, cx, 22, 6, 8, C_LCYAN);           /* inner ring */
+        for (y = 0; y < h; y++)                            /* inner-left magenta */
+            for (x = 0; x < cx; x++)
+                if (dst[y * w + x] == C_LCYAN) dst[y * w + x] = C_LMAG;
+        brect(dst, w, h, cx - 1, 21, cx, 22, C_WHITE);     /* singularity */
+        bset(dst, w, h, cx, 3, C_WHITE); bset(dst, w, h, cx, 40, C_WHITE);
+        bset(dst, w, h, 3, 22, C_WHITE); bset(dst, w, h, 40, 22, C_WHITE);
         break; }
 
-    case 6: {   /* SERAPH - tall winged boss with cyan wing ribs */
-        w = 48; h = 38; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        for (y = 0; y < h; y++) {
-            i16 body = (y < 8) ? 3 + y / 2 : (y < 28) ? 8 : 16 - y / 2;
-            if (body < 3) body = 3;
-            bhline(dst, w, h, cx - body, cx + body, y, C_LCYAN);
+    case 12: {  /* BASILISK - serpent skull, one huge tracking eye */
+        w = 48; h = 32; cx = w / 2;
+        for (y = 2; y < 30; y++) {                         /* skull wedge */
+            i16 half = (y < 12) ? (i16)(10 + y) : (i16)(22 - (y - 12) / 2);
+            if (half > 22) half = 22;
+            bhline(dst, w, h, cx - half, cx + half, y, C_GREEN);
+            bset(dst, w, h, cx - half, y, C_LGREEN);
+            bset(dst, w, h, cx + half, y, C_LGREEN);
         }
-        for (y = 5; y < h - 4; y++) {
-            i16 wing = (y < 18) ? y : h - y;
-            bhline(dst, w, h, 2, 2 + wing, y, (y & 2) ? C_CYAN : C_LBLUE);
-            bhline(dst, w, h, w - 3 - wing, w - 3, y, (y & 2) ? C_CYAN : C_LBLUE);
+        bdither(dst, w, h, cx - 18, 16, cx + 18, 27, C_LGREEN);  /* scales */
+        for (x = 0; x < 4; x++) {                          /* crest spikes */
+            i16 sx = (i16)(cx - 9 + x * 6);
+            bset(dst, w, h, sx, 1, C_LGREEN);
+            bset(dst, w, h, sx, 0, C_WHITE);
         }
-        brect(dst, w, h, cx - 3, 9, cx + 2, 21, C_WHITE);
-        bset(dst, w, h, cx - 1, 4, PAL_GLOW + 14); bset(dst, w, h, cx, 4, PAL_GLOW + 14);
+        bring(dst, w, h, cx, 13, 7, 8, C_YELLOW);          /* eye socket */
+        bdisc(dst, w, h, cx, 13, 6, C_YELLOW);
+        bdisc(dst, w, h, cx, 13, 4, C_RED);
+        brect(dst, w, h, cx - 1, 12, cx, 14, C_BLACK);     /* slit pupil base */
+        bset(dst, w, h, cx - 6, 28, C_WHITE); bset(dst, w, h, cx + 5, 28, C_WHITE);
+        bset(dst, w, h, cx - 6, 29, C_WHITE); bset(dst, w, h, cx + 5, 29, C_WHITE);
         break; }
 
-    case 7: {   /* NEXUS - split core, two vulnerable pods */
-        w = 54; h = 28; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        brect(dst, w, h, 4, 8, 20, 22, C_LMAG);
-        brect(dst, w, h, w - 21, 8, w - 5, 22, C_LMAG);
-        brect(dst, w, h, cx - 5, 3, cx + 4, 24, C_DGRAY);
-        brect(dst, w, h, 9, 12, 15, 18, PAL_GLOW + 8);
-        brect(dst, w, h, w - 16, 12, w - 10, 18, PAL_GLOW + 8);
-        bhline(dst, w, h, 17, w - 18, 8, C_WHITE);
-        bhline(dst, w, h, 17, w - 18, 22, C_WHITE);
-        break; }
-
-    case 8: {   /* KRAKEN - tentacle carrier */
-        w = 58; h = 32; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        brect(dst, w, h, 12, 2, w - 13, 17, C_GREEN);
-        brect(dst, w, h, cx - 8, 6, cx + 7, 14, C_LGREEN);
-        brect(dst, w, h, cx - 4, 9, cx + 3, 13, C_BLACK);
-        for (x = 5; x < w - 5; x += 9)
-            for (y = 17; y < h - 1; y++)
-                bset(dst, w, h, (i16)(x + (((y + x) & 6) - 3)), y, (y & 1) ? C_LGREEN : C_GREEN);
-        bset(dst, w, h, cx - 2, 5, PAL_GLOW + 14); bset(dst, w, h, cx + 2, 5, PAL_GLOW + 14);
-        break; }
-
-    case 9: {   /* PHANTOM - narrow ghost ship, broken outline */
-        w = 34; h = 34; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        for (y = 0; y < h; y++) {
-            i16 half = (y < 8) ? y / 2 + 2 : (y < 25) ? 10 : 18 - y / 2;
-            bhline(dst, w, h, cx - half, cx + half, y, (y & 3) ? C_LBLUE : C_DGRAY);
-            if ((y & 3) == 0) brect(dst, w, h, cx - half + 2, y, cx + half - 2, y, 0);
+    case 13: {  /* TITAN - tri-layer dreadnought; armour breaks per phase */
+        w = 72; h = 44; cx = w / 2;
+        brect(dst, w, h, 0, 26, w - 1, 38, C_DGRAY);       /* lower hull */
+        bdither(dst, w, h, 2, 27, w - 3, 33, C_LGRAY);     /* armour texture */
+        brect(dst, w, h, 6, 14, w - 7, 26, C_LGRAY);       /* mid hull */
+        brect(dst, w, h, 14, 4, w - 15, 14, C_DGRAY);      /* upper hull */
+        bhline(dst, w, h, 14, w - 15, 4, C_WHITE);
+        bhline(dst, w, h, 6, w - 7, 14, C_WHITE);
+        bhline(dst, w, h, 0, w - 1, 26, C_LGRAY);
+        brect(dst, w, h, cx - 9, 0, cx + 8, 24, C_LGRAY);  /* command spine */
+        bvline(dst, w, h, cx - 9, 0, 24, C_DGRAY); bvline(dst, w, h, cx + 8, 0, 24, C_DGRAY);
+        brect(dst, w, h, cx - 4, 6, cx + 3, 20, PAL_FIRE + 8);   /* reactor slot */
+        brect(dst, w, h, cx - 2, 9, cx + 1, 17, PAL_FIRE + 13);
+        for (x = 10; x < w - 10; x += 12) {                /* heavy cannon mounts */
+            brect(dst, w, h, x, 30, (i16)(x + 5), 36, C_RED);
+            bset(dst, w, h, (i16)(x + 2), 37, PAL_FIRE + 12);
         }
-        brect(dst, w, h, cx - 2, 8, cx + 1, 22, C_WHITE);
-        bset(dst, w, h, cx - 5, 13, C_LCYAN); bset(dst, w, h, cx + 5, 13, C_LCYAN);
+        for (x = 4; x < w - 4; x += 10)                    /* engine bank glow */
+            brect(dst, w, h, x, 40, (i16)(x + 4), 42, (u8)(PAL_FIRE + 9));
+        brect(dst, w, h, 0, 16, 6, 30, C_LGRAY);           /* side pontoons */
+        brect(dst, w, h, w - 7, 16, w - 1, 30, C_LGRAY);
         break; }
 
-    case 10: {  /* CITADEL - fortress wall with turrets */
-        w = 62; h = 32; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        brect(dst, w, h, 3, 9, w - 4, h - 4, C_DGRAY);
-        for (x = 6; x < w - 6; x += 12) brect(dst, w, h, x, 3, x + 7, 12, C_LGRAY);
-        brect(dst, w, h, cx - 7, 5, cx + 6, 25, C_LGRAY);
-        brect(dst, w, h, cx - 3, 10, cx + 2, 17, C_RED);
-        for (x = 9; x < w - 9; x += 10) bset(dst, w, h, x, h - 2, PAL_FIRE + 12);
-        break; }
-
-    case 11: {  /* VORTEX - rotating ring boss */
-        w = 46; h = 34; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        for (y = 0; y < h; y++) {
-            i16 dy = y - h / 2;
-            i16 ay = dy < 0 ? -dy : dy;
-            i16 outer = (ay < 4) ? 21 : (ay < 9) ? 18 : (ay < 14) ? 12 : 5;
-            i16 inner = (ay < 5) ? 8 : (ay < 9) ? 5 : 1;
-            bhline(dst, w, h, cx - outer, cx - inner, y, C_LMAG);
-            bhline(dst, w, h, cx + inner, cx + outer, y, C_LCYAN);
+    default: {  /* OVERLORD - crowned obelisk finale, cycling core */
+        w = 64; h = 52; cx = w / 2;
+        for (x = 0; x < 5; x++) {                          /* crown spikes */
+            i16 sx = (i16)(cx - 12 + x * 6);
+            bvline(dst, w, h, sx, (x == 2) ? 0 : 2, 7, C_LMAG);
+            bset(dst, w, h, sx, (x == 2) ? 0 : 2, C_WHITE);
         }
-        for (x = 6; x < w - 6; x += 8) { bset(dst, w, h, x, h / 2, C_WHITE); bset(dst, w, h, w - x, h / 2 - 1, C_WHITE); }
-        break; }
-
-    case 12: {  /* BASILISK - central eye and beam fins */
-        w = 42; h = 30; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        brect(dst, w, h, 6, 6, w - 7, h - 8, C_GREEN);
-        for (y = 0; y < h; y += 3) {
-            bhline(dst, w, h, 1, 8 + y / 5, y, C_LGREEN);
-            bhline(dst, w, h, w - 9 - y / 5, w - 2, y, C_LGREEN);
+        for (y = 7; y < 46; y++) {                         /* obelisk body */
+            i16 half = (i16)(8 + (y * 14) / 46);
+            bhline(dst, w, h, cx - half, cx + half, y, C_MAGENTA);
+            bset(dst, w, h, cx - half, y, C_LMAG);
+            bset(dst, w, h, cx + half, y, C_LMAG);
         }
-        brect(dst, w, h, cx - 7, 9, cx + 6, 20, C_YELLOW);
-        brect(dst, w, h, cx - 3, 12, cx + 2, 17, C_RED);
-        brect(dst, w, h, cx - 1, 14, cx, 15, C_WHITE);
-        break; }
-
-    case 13: {  /* TITAN - massive pre-final dreadnought */
-        w = 64; h = 38; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        brect(dst, w, h, 2, 8, w - 3, h - 6, C_DGRAY);
-        brect(dst, w, h, 8, 3, w - 9, 12, C_LGRAY);
-        brect(dst, w, h, cx - 10, 0, cx + 9, 21, C_LGRAY);
-        brect(dst, w, h, cx - 4, 8, cx + 3, 20, PAL_FIRE + 8);
-        for (x = 6; x < w - 6; x += 9) brect(dst, w, h, x, h - 8, x + 4, h - 2, C_RED);
-        brect(dst, w, h, 0, 16, 8, 27, C_LGRAY);
-        brect(dst, w, h, w - 9, 16, w - 1, 27, C_LGRAY);
-        break; }
-
-    default: {  /* OVERLORD - tall magenta finale with white spine + emitters */
-        w = 48; h = 40; cx = w / 2;
-        memset(dst, 0, BOSS_MAXW * BOSS_MAXH);
-        for (y = 0; y < h; y++) {
-            i16 half = (y < 8) ? 2 + y * 2 : (y < 26) ? 20 : (y < 34) ? 26 - (y - 26) : 14;
-            bhline(dst, w, h, cx - half, cx + half, y, C_LMAG);
-            bset(dst, w, h, cx - half, y, C_MAGENTA);
-            bset(dst, w, h, cx + half, y, C_MAGENTA);
-        }
-        for (y = 6; y < h - 6; y++) {
-            bset(dst, w, h, cx - 1, y, C_WHITE);
-            bset(dst, w, h, cx, y, C_WHITE);
-        }
-        brect(dst, w, h, cx - 5, 16, cx + 4, 26, PAL_GLOW + 4);
-        for (x = 8; x < w - 8; x += 4) {
-            bset(dst, w, h, x, 8, PAL_GLOW + 12);
-            bset(dst, w, h, x, h - 8, PAL_GLOW + 10);
-        }
-        for (y = 12; y < 28; y++) { bset(dst, w, h, 9, y, C_MAGENTA); bset(dst, w, h, w - 10, y, C_MAGENTA); }
+        bdither(dst, w, h, cx - 18, 30, cx + 18, 44, C_LMAG);
+        bvline(dst, w, h, cx - 1, 7, 45, C_WHITE);         /* spine */
+        bvline(dst, w, h, cx, 7, 45, C_WHITE);
+        brect(dst, w, h, cx - 6, 20, cx + 5, 32, (u8)(PAL_GLOW + 4));  /* core */
+        brect(dst, w, h, cx - 3, 23, cx + 2, 29, (u8)(PAL_GLOW + 10));
+        brect(dst, w, h, 2, 24, 8, 40, C_MAGENTA);         /* emitter pylons */
+        brect(dst, w, h, w - 9, 24, w - 3, 40, C_MAGENTA);
+        bvline(dst, w, h, 5, 20, 23, C_LMAG); bvline(dst, w, h, w - 6, 20, 23, C_LMAG);
+        bset(dst, w, h, 5, 19, C_WHITE); bset(dst, w, h, w - 6, 19, C_WHITE);
+        bhline(dst, w, h, 8, cx - 8, 27, C_LMAG);          /* pylon struts */
+        bhline(dst, w, h, cx + 7, w - 9, 27, C_LMAG);
+        for (x = cx - 16; x <= cx + 16; x += 4)            /* engine flare base */
+            bset(dst, w, h, x, 47, (u8)(PAL_FIRE + 10));
+        bhline(dst, w, h, cx - 20, cx + 20, 46, C_DGRAY);
         break; }
     }
     *ow = w; *oh = h;
+}
+
+/* NEXUS orbiting fire-pod (drawn twice at boss.px[]/py[]) */
+static void build_bosspod(u8 *dst)
+{
+    memset(dst, 0, SH_POD_W * SH_POD_H);
+    bring(dst, SH_POD_W, SH_POD_H, 7, 6, 4, 5, C_LMAG);
+    bdisc(dst, SH_POD_W, SH_POD_H, 7, 6, 3, (u8)(PAL_GLOW + 8));
+    bset(dst, SH_POD_W, SH_POD_H, 7, 6, C_WHITE);
 }
 
 /* recolour the cannon bullet into laser/wave palettes */
@@ -525,6 +677,7 @@ void sprites_init(void)
         for (b = 0; b < NBOSS; b++)
             build_boss(spr_boss[b], (u8)b, &spr_boss_w[b], &spr_boss_h[b]);
     }
+    build_bosspod(spr_bosspod);
     rom_font = get_rom8x8();
 }
 

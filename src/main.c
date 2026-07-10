@@ -100,7 +100,9 @@ int main(int argc, char **argv)
         game_selftest_help("HELP1.BMP", 0);
         game_selftest_help("HELP2.BMP", 1);
         game_selftest_stages("STAGES.BMP");
-        game_selftest_bosses("BOSSES.BMP");
+        game_selftest_bosses("BOSSES1.BMP", 0);
+        game_selftest_bosses("BOSSES2.BMP", 1);
+        game_selftest_logic();    /* separation + boss envelopes -> SELFTEST.TXT */
         return 0;                 /* cleanup() restores text mode */
     }
 

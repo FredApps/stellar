@@ -57,7 +57,11 @@ Every four-wave block changes palette and wave personality:
 | Mixed pressure | Balanced enemy mix |
 
 From wave 7 onward, rare elite enemies appear. Normal elite chance is 12%, rising to 18% after
-wave 12. Easy reduces those chances by 4 points; Hard adds 5 points.
+wave 12 and 22% from wave 20. Easy reduces those chances by 4 points; Hard adds 5 points.
+Enemy fall speed gains a step after wave 6 and another after wave 24.
+
+Enemies never stack: spawn positions avoid fresh spawns, and a light separation pass nudges
+overlapping ships apart so formations stay readable.
 
 | Enemy | Normal | Elite |
 |-------|--------|-------|
@@ -69,14 +73,34 @@ Some shooters peel sideways after firing instead of simply falling offscreen.
 
 ## Bosses
 
-Bosses enter every fourth wave and change behavior below about 66% and 33% HP. Dense attacks have
-a flashing charge tell, and damaged bosses show visible scorch/phase overlays.
+Bosses enter every fourth wave behind a flashing WARNING klaxon, and change behavior below about
+66% and 33% HP — the phase change alters the movement pattern itself, not just the fire rate.
+Every move that invades the player's zone (dive, slam, lunge, teleport) is telegraphed with a
+flashing charge frame first. Bosses flash white when hit and go down in a chained-explosion
+death sequence before the final blast.
 
-The authored campaign has a unique boss at each boss wave from W04 through W60:
-Gorgon, Reaper, Leviathan, Seeker, Mantis, Anvil, Seraph, Nexus, Kraken,
-Phantom, Citadel, Vortex, Basilisk, Titan, and Overlord. Each has its own
-footprint, vertical movement band, and attack script; the W60 Overlord ends the
-campaign with the win screen and custom win theme.
+The authored campaign has a unique boss at each boss wave from W04 through W60, each with its own
+silhouette, movement language, and attack script:
+
+| Wave | Boss | Movement language |
+|------|------|-------------------|
+| W04 | Gorgon | Rampart crawl; slams down and grinds through the dodge zone |
+| W08 | Reaper | Deep dives through the player band; chains dives when enraged |
+| W12 | Leviathan | High carrier; telegraphed full-width bombing trawls + fighter squads |
+| W16 | Seeker | Orbits the player's position; the orbit tightens per phase |
+| W20 | Mantis | Clings to a wall, then lunges across at the player's height |
+| W24 | Anvil | Floor crush with a horizontal bullet shockwave; double-crushes enraged |
+| W28 | Seraph | Full-width pendulum sweep that dips through mid-screen |
+| W32 | Nexus | Anchored core; two orbiting fire-pods own the crossfire |
+| W36 | Kraken | Advancing tentacle wall; recoils to the top at each phase change |
+| W40 | Phantom | True teleports: dematerialises, blinks, arrival burst |
+| W44 | Citadel | Marches a perimeter rectangle that shrinks per phase |
+| W48 | Vortex | Breathing spiral whose centre drifts over the player |
+| W52 | Basilisk | Stalks the player's column, then guillotines straight down it |
+| W56 | Titan | Quake slams with bullet columns; steamrolls when enraged |
+| W60 | Overlord | Finale: figure-eight, then Phantom blinks, then Seeker orbit + Reaper dives |
+
+The W60 Overlord ends the campaign with the win screen and custom win theme.
 
 Defeating a boss drops three pickups — a Life, a Bomb, and a Missile pack. Unused bombs after boss
 waves grant +400 each.
@@ -97,17 +121,18 @@ Rapid fire (`R`) temporarily reduces weapon cooldown.
 ## Missiles, Bombs, And Pickups
 
 Missiles start at 5 ammo and cap at 30 (two-digit HUD counter). Each missile steers toward the
-nearest target ahead of it and explodes with area damage (4 to enemies in a 52 px blast, **18 to
-a boss** — missiles are the boss-killer tool). Bosses always drop an M pickup on death.
+nearest target ahead of it and explodes with area damage (4 to enemies in a 52 px blast, and
+**1/12 of a boss's max HP** — missiles remain the boss-killer tool, but a boss now takes 12 of
+them). Bosses always drop an M pickup on death.
 
-Smart bombs clear enemy bullets, damage all enemies, and hit the boss. Bombs also score +25 per
-bullet cleared and +100 per enemy killed by the bomb.
+Smart bombs clear enemy bullets, damage all enemies, and deal 1/4 of a boss's max HP. Bombs also
+score +25 per bullet cleared and +100 per enemy killed by the bomb.
 
 | Icon | Type | Effect |
 |------|------|--------|
 | G | Gun | +1 gun level, up to 4 |
 | R | Rapid | Timed fast fire |
-| H | Shield | Absorbs one hit |
+| H | Shield | ~10 seconds of full invulnerability; blinks before expiring |
 | L | Life | +1 ship, up to 9 |
 | M | Missiles | +4 missile ammo, up to 30 |
 | Z | Laser | Switches main weapon to Laser |
@@ -121,6 +146,7 @@ The score pickup appears near the upper-mid playfield after a 10+ kill combo str
 
 Consecutive kills build a combo timer. Every 6 kills increases the combo multiplier by 1, capped at x5.
 Taking any hit breaks the combo. Grazing enemy bullets awards +10 and refreshes the combo timer.
+Combo tier-ups, elite bounties, and boss kills show floating score popups at the kill site.
 Difficulty then multiplies scoring: Easy x1.00, Normal x1.25, Hard x1.60.
 
 | Event | Points |

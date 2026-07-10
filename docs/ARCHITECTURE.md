@@ -86,6 +86,14 @@ The game avoids dynamic allocation during play. It uses fixed pools for player
 bullets, enemy bullets, enemies, power-ups, particles, missiles, stars, and
 foreground dust. Positions are integers; sine movement uses `sintab[]`.
 
+Boss sprites are procedural pixel bitmaps built at startup into
+`spr_boss[15][72*52]` (56,160 bytes — one far object, kept under the 64 KB
+compact-model limit). Several bosses add cheap per-frame overlays at draw time
+(tentacles, orbiting pods/orbs, tracking pupils) on top of the static bitmap.
+Boss movement is a per-kind state machine in `boss_move()` bounded by a
+per-boss vertical envelope (`boss_max_y()`); an every-other-frame O(n^2)
+separation pass keeps the enemy pool unstacked.
+
 The state machine is:
 
 ```text
@@ -94,7 +102,9 @@ TITLE -> PLAY -> OVER -> ENTRY/SCORES -> TITLE
 
 Hidden command-line modes:
 
-- `/shot` renders `TITLE.BMP` and `FRAME.BMP`.
+- `/shot` renders `TITLE.BMP`, `FRAME.BMP`, `HELP1/2.BMP`, `STAGES.BMP`, and the
+  boss roster atlases `BOSSES1.BMP`/`BOSSES2.BMP`, then runs headless logic
+  checks (enemy separation + all boss movement envelopes) into `SELFTEST.TXT`.
 - `/audiodump` writes speaker frequencies to `AUDIO.TXT`.
 - `/bench` writes a rough rendered-frame timing sample to `BENCH.TXT`.
 

@@ -256,12 +256,14 @@ const spr_boss_w = Array(NBOSS).fill(0), spr_boss_h = Array(NBOSS).fill(0);
 
 /* fixed campaign roster: one authored boss for each boss wave, W04..W60. */
 const BOSSDEF = [
-  { spr:0,  hpbonus: 40 }, { spr:1,  hpbonus:-10 }, { spr:2,  hpbonus: 20 },
+  { spr:0,  hpbonus: 40 }, { spr:1,  hpbonus:  0 }, { spr:2,  hpbonus: 20 },
   { spr:3,  hpbonus:  0 }, { spr:4,  hpbonus: 15 }, { spr:5,  hpbonus: 35 },
   { spr:6,  hpbonus: 10 }, { spr:7,  hpbonus: 25 }, { spr:8,  hpbonus: 30 },
   { spr:9,  hpbonus:  5 }, { spr:10, hpbonus: 45 }, { spr:11, hpbonus: 15 },
   { spr:12, hpbonus: 20 }, { spr:13, hpbonus: 60 }, { spr:14, hpbonus: 90 },
 ];
+const SH_POD_W = 14, SH_POD_H = 12;      /* NEXUS orbiting fire-pod */
+let spr_bosspod = null;
 
 function build_pbul(body, core) {
   const d = new Uint8Array(SH_PB_W * SH_PB_H);
@@ -283,154 +285,295 @@ function build_pu(fill) {
 }
 /* Each roster slot has its own silhouette, footprint and palette (mirror of
    the native build_boss). Returns the tightly-packed (stride = w) sprite and
-   records its dimensions in spr_boss_w/h[kind]. */
+   records its dimensions in spr_boss_w/h[kind]. Several bosses lean on
+   run-time overlays in draw_play (KRAKEN tentacles, VORTEX orbs, tracking
+   pupils, NEXUS pods) on top of the static bitmap. */
 function build_boss(kind) {
-  const dims = [[56,28],[32,28],[64,30],[40,26],[52,30],[44,24],[48,38],[54,28],
-                [58,32],[34,34],[62,32],[46,34],[42,30],[64,38],[48,40]];
+  const dims = [[68,30],[34,33],[72,32],[40,40],[60,30],[48,30],[56,48],[22,28],
+                [64,30],[34,40],[72,34],[44,44],[48,32],[72,44],[64,52]];
   const [w, h] = dims[kind] || dims[14];
   spr_boss_w[kind] = w; spr_boss_h[kind] = h;
   const d = new Uint8Array(w * h);
   const bset = (x, y, c) => { if (x >= 0 && x < w && y >= 0 && y < h) d[y*w+x] = c; };
   const bhline = (x0, x1, y, c) => { if (x0 < 0) x0 = 0; if (x1 > w-1) x1 = w-1; for (let x = x0; x <= x1; x++) bset(x, y, c); };
   const brect = (x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) bhline(x0, x1, y, c); };
+  const bvline = (x, y0, y1, c) => { if (y0 < 0) y0 = 0; if (y1 > h-1) y1 = h-1; for (let y = y0; y <= y1; y++) bset(x, y, c); };
+  const bdisc = (dx, dy, r, c) => { for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x*x + y*y <= r*r) bset(dx+x, dy+y, c); };
+  const bring = (dx, dy, r0, r1, c) => { const a = r0*r0, b = r1*r1; for (let y = -r1; y <= r1; y++) for (let x = -r1; x <= r1; x++) { const d2 = x*x + y*y; if (d2 >= a && d2 <= b) bset(dx+x, dy+y, c); } };
+  const bdither = (x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (((x ^ y) & 1) === 0) bset(x, y, c); };
+  const bmirror = () => { for (let y = 0; y < h; y++) for (let x = 0; x < (w >> 1); x++) d[y*w + (w-1-x)] = d[y*w + x]; };
   const cx = w >> 1;
   let x, y;
 
-  if (kind === 0) {          /* GORGON - huge low wall tank */
-    for (y = 0; y < h; y++) {
-      const half = y < 4 ? 16 + y : y < 22 ? 20 + (y >> 3) : 22 - (y - 22);
-      bhline(cx - half, cx + half, y, C_LGRAY);
-      bset(cx - half, y, C_DGRAY); bset(cx + half, y, C_DGRAY);
+  if (kind === 0) {          /* GORGON - serrated siege wall, exposed fire trench */
+    for (x = 0; x < w; x += 8) {
+      bhline(x + 2, x + 5, 2, C_LGRAY);
+      bhline(x + 1, x + 6, 3, C_LGRAY);
+      bhline(x, x + 7, 4, C_LGRAY);
+      bset(x + 3, 1, C_YELLOW);
     }
-    bhline(4, w - 5, 6, C_DGRAY); bhline(3, w - 4, 19, C_DGRAY);
-    brect(cx - 6, 8, cx + 5, 18, PAL_FIRE + 6);
-    bhline(cx - 6, cx + 5, 8, C_RED); bhline(cx - 6, cx + 5, 18, C_RED);
-    for (x = 6; x < w - 6; x += 6) bset(x, h - 3, PAL_FIRE + 12);
-    bset(8, 4, C_YELLOW); bset(w - 9, 4, C_YELLOW);
-  } else if (kind === 1) {   /* REAPER - crimson dagger pointing down, swept wings */
-    for (y = 0; y < h; y++) {
-      let half = 13 - ((y * 11 / h) | 0); if (half < 1) half = 1;
-      bhline(cx - half, cx + half, y, C_LRED);
-      bset(cx - half, y, C_RED); bset(cx + half, y, C_RED);
+    brect(0, 5, w - 1, 12, C_LGRAY);
+    brect(1, 13, w - 2, 19, C_DGRAY);
+    bdither(2, 20, w - 3, 26, C_LGRAY);
+    bhline(0, w - 1, 5, C_WHITE);
+    for (x = 10; x < w - 10; x += 12) bvline(x, 6, 18, C_DGRAY);
+    brect(cx - 11, 8, cx + 10, 17, C_BLACK);
+    brect(cx - 10, 9, cx + 9, 16, PAL_FIRE + 6);
+    brect(cx - 6, 11, cx + 5, 14, PAL_FIRE + 11);
+    bhline(cx - 11, cx + 10, 8, C_RED);
+    bhline(cx - 11, cx + 10, 17, C_RED);
+    for (x = 6; x < w - 6; x += 8) { bset(x, 27, PAL_FIRE + 12); bset(x, 28, PAL_FIRE + 8); }
+  } else if (kind === 1) {   /* REAPER - asymmetric crescent scythe, skull cockpit */
+    for (y = 0; y < 30; y++) {
+      const x0 = 2 + Math.trunc(y * y / 45);
+      let x1 = x0 + 11 - Math.trunc(y / 3);
+      if (x1 <= x0) x1 = x0 + 1;
+      bhline(x0, x1, y, C_LRED);
+      bset(x0, y, C_WHITE);
+      bset(x1, y, C_RED);
     }
-    for (y = 5; y < 12; y++) {
-      const s = 14 - (y - 5);
-      bhline(cx - s, cx - s + 2, y, C_RED); bhline(cx + s - 2, cx + s, y, C_RED);
+    bhline(21, 22, 30, C_LRED);
+    bset(22, 31, C_WHITE);
+    bvline(26, 4, 26, C_DGRAY);
+    bvline(27, 3, 27, C_LGRAY);
+    bvline(28, 4, 26, C_DGRAY);
+    brect(12, 2, 26, 4, C_RED);
+    brect(23, 6, 31, 13, C_LGRAY);
+    bset(25, 9, PAL_FIRE + 13); bset(29, 9, PAL_FIRE + 13);
+    bhline(24, 30, 12, C_DGRAY);
+    bset(25, 13, C_DGRAY); bset(27, 13, C_DGRAY); bset(29, 13, C_DGRAY);
+    brect(26, 27, 28, 31, PAL_FIRE + 9);
+  } else if (kind === 2) {   /* LEVIATHAN - full-width strike carrier, runway deck */
+    brect(2, 8, w - 3, 26, C_LGRAY);
+    bhline(2, w - 3, 8, C_WHITE);
+    brect(0, 12, 3, 24, C_DGRAY);
+    brect(w - 4, 12, w - 1, 24, C_DGRAY);
+    for (x = 6; x < w - 6; x += 6) bset(x, 17, (x & 4) ? C_WHITE : C_YELLOW);
+    brect(8, 11, 24, 23, C_BLACK);
+    brect(w - 25, 11, w - 9, 23, C_BLACK);
+    for (y = 11; y <= 23; y++) {
+      bset(8, y, C_LGREEN);  bset(24, y, C_LGREEN);
+      bset(w - 25, y, C_LGREEN); bset(w - 9, y, C_LGREEN);
     }
-    brect(cx - 2, 3, cx + 1, 7, C_YELLOW);
-    bset(cx - 1, 5, PAL_FIRE + 14); bset(cx, 5, PAL_FIRE + 14);
-    bset(cx - 1, h - 1, C_WHITE);
-  } else if (kind === 2) {   /* LEVIATHAN - carrier */
-    brect(3, 5, w - 4, h - 6, C_LGRAY);
-    brect(6, 2, w - 7, 6, C_DGRAY);
-    brect(cx - 8, 1, cx + 7, 12, C_LGRAY);
-    brect(cx - 5, 4, cx + 4, 9, PAL_GLOW + 7);
-    brect(9, 12, 22, h - 9, C_BLACK); brect(w - 23, 12, w - 10, h - 9, C_BLACK);
-    for (y = 12; y <= h - 9; y++) {
-      bset(9, y, C_LGREEN); bset(22, y, C_LGREEN);
-      bset(w - 23, y, C_LGREEN); bset(w - 10, y, C_LGREEN);
+    for (x = 10; x < 24; x += 4) bset(x, 23, C_GREEN);
+    for (x = w - 23; x < w - 9; x += 4) bset(x, 23, C_GREEN);
+    brect(cx - 7, 2, cx + 6, 10, C_DGRAY);
+    brect(cx - 4, 4, cx + 3, 8, PAL_GLOW + 9);
+    bhline(cx - 7, cx + 6, 2, C_LGRAY);
+    bhline(4, w - 5, 27, C_DGRAY);
+    for (x = 8; x < w - 8; x += 8) { bset(x, 28, PAL_FIRE + 11); bset(x, 29, PAL_FIRE + 7); }
+  } else if (kind === 3) {   /* SEEKER - concentric glow rings around a watching eye */
+    bring(cx, 20, 18, 19, PAL_GLOW + 5);
+    bring(cx, 20, 13, 14, PAL_GLOW + 9);
+    bring(cx, 20, 8, 9, PAL_GLOW + 13);
+    bdisc(cx, 20, 6, C_GREEN);
+    bdisc(cx, 20, 4, C_LGREEN);
+    bvline(cx, 1, 6, C_LGREEN);  bvline(cx, 33, 38, C_LGREEN);
+    bhline(1, 6, 20, C_LGREEN);  bhline(33, 38, 20, C_LGREEN);
+    bset(cx, 1, C_WHITE); bset(cx, 38, C_WHITE);
+    bset(1, 20, C_WHITE); bset(38, 20, C_WHITE);
+    brect(cx - 2, 18, cx + 1, 21, C_BLACK);   /* pupil tracks at draw time */
+  } else if (kind === 4) {   /* MANTIS - oversized serrated claw crescents */
+    brect(cx - 4, 6, cx + 3, 25, C_GREEN);
+    brect(cx - 2, 10, cx + 1, 20, PAL_GLOW + 10);
+    bset(cx - 3, 4, C_LGREEN); bset(cx - 4, 3, C_LGREEN);
+    for (y = 1; y < 27; y++) {
+      const dy2 = y - 14;
+      let span = 17 - Math.trunc(dy2 * dy2 / 12);
+      if (span < 3) span = 3;
+      bhline(2, 2 + span, y, (y & 1) ? C_GREEN : C_LGREEN);
     }
-    for (x = 8; x < w - 8; x += 8) bset(x, h - 3, PAL_FIRE + 10);
-  } else if (kind === 3) {   /* SEEKER - green orbiter disc, glowing eye + spokes */
-    const hc = h >> 1;
-    for (y = 0; y < h; y++) {
-      const ay = y - hc < 0 ? hc - y : y - hc;
-      const half = ay < 4 ? 18 : ay < 8 ? 15 : ay < 11 ? 9 : 3;
-      bhline(cx - half, cx + half, y, C_LGREEN);
-      bset(cx - half, y, C_GREEN); bset(cx + half, y, C_GREEN);
+    for (y = 3; y < 25; y += 3) {
+      const dy2 = y - 14;
+      let span = 17 - Math.trunc(dy2 * dy2 / 12);
+      if (span < 3) span = 3;
+      bset(3 + span, y, C_LGREEN);
+      bset(4 + span, y, C_GREEN);
     }
-    for (x = 4; x < w - 4; x += 5) bset(x, hc, PAL_GLOW + 12);
-    brect(cx - 4, hc - 3, cx + 3, hc + 2, PAL_GLOW + 8);
-    brect(cx - 2, hc - 1, cx + 1, hc, C_WHITE);
-  } else if (kind === 4) {   /* MANTIS - twin claws */
-    brect(cx - 7, 6, cx + 6, 23, C_LGREEN);
-    brect(cx - 3, 11, cx + 2, 18, PAL_GLOW + 10);
-    for (y = 2; y < 24; y++) {
-      const span = 9 + (y > 12 ? ((24 - y) >> 1) : (y >> 1));
-      bhline(5, 5 + span, y, (y & 1) ? C_GREEN : C_LGREEN);
-      bhline(w - 6 - span, w - 6, y, (y & 1) ? C_GREEN : C_LGREEN);
+    bset(20, 13, C_YELLOW); bset(20, 15, C_YELLOW);
+    bset(21, 14, C_WHITE);
+    bmirror();
+  } else if (kind === 5) {   /* ANVIL - industrial crush press with hazard chevrons */
+    brect(2, 1, w - 3, 8, C_DGRAY);
+    bhline(2, w - 3, 1, C_LGRAY);
+    for (x = 5; x < w - 5; x += 6) bset(x, 4, C_WHITE);
+    for (x = 10; x <= w - 12; x += 12) {
+      bvline(x, 9, 20, C_LGRAY);
+      bvline(x + 1, 9, 20, C_DGRAY);
     }
-    brect(1, 10, 11, 14, C_YELLOW); brect(w - 12, 10, w - 2, 14, C_YELLOW);
-    bset(2, 15, C_WHITE); bset(w - 3, 15, C_WHITE);
-  } else if (kind === 5) {   /* ANVIL */
-    brect(4, 2, w - 5, h - 3, C_DGRAY); brect(7, 5, w - 8, h - 6, C_LGRAY);
-    brect(cx - 6, h - 7, cx + 5, h - 3, C_RED);
-    for (x = 8; x < w - 8; x += 7) brect(x, 6, x + 2, h - 8, C_WHITE);
-    brect(0, h - 5, 7, h - 1, C_DGRAY); brect(w - 8, h - 5, w - 1, h - 1, C_DGRAY);
-  } else if (kind === 6) {   /* SERAPH */
-    for (y = 0; y < h; y++) {
-      let body = y < 8 ? 3 + (y >> 1) : y < 28 ? 8 : 16 - (y >> 1);
-      if (body < 3) body = 3;
-      bhline(cx - body, cx + body, y, C_LCYAN);
+    brect(4, 21, w - 5, 27, C_RED);
+    bhline(4, w - 5, 21, C_LRED);
+    for (x = 4; x <= w - 5; x++) if (((x >> 2) & 1) === 0) bset(x, 24, C_YELLOW);
+    bhline(6, w - 7, 28, C_DGRAY);
+  } else if (kind === 6) {   /* SERAPH - haloed sentinel, layered feather ribs */
+    bhline(cx - 6, cx + 5, 1, PAL_GLOW + 14);
+    bset(cx - 7, 2, PAL_GLOW + 11); bset(cx + 6, 2, PAL_GLOW + 11);
+    brect(cx - 3, 4, cx + 2, 9, C_WHITE);
+    for (y = 10; y < 44; y++) {
+      const half = y < 30 ? 5 : 5 + Math.trunc((y - 30) / 3);
+      bhline(cx - half, cx + half, y, C_LCYAN);
     }
-    for (y = 5; y < h - 4; y++) {
-      const wing = y < 18 ? y : h - y;
-      bhline(2, 2 + wing, y, (y & 2) ? C_CYAN : C_LBLUE);
-      bhline(w - 3 - wing, w - 3, y, (y & 2) ? C_CYAN : C_LBLUE);
+    bvline(cx - 1, 12, 40, C_WHITE);
+    bvline(cx, 12, 40, C_WHITE);
+    brect(cx - 2, 22, cx + 1, 28, PAL_GLOW + 12);
+    for (x = 0; x < 5; x++) {
+      const rx = cx - 9 - x * 4, top = 12 + x * 2, bot = 42 - x * 4;
+      bvline(rx, top, bot, PAL_GLOW + 13 - x * 2);
+      bvline(rx - 1, top, bot, PAL_GLOW + 11 - x * 2);
+      bset(rx, bot + 1, C_WHITE);
     }
-    brect(cx - 3, 9, cx + 2, 21, C_WHITE);
-    bset(cx - 1, 4, PAL_GLOW + 14); bset(cx, 4, PAL_GLOW + 14);
-  } else if (kind === 7) {   /* NEXUS */
-    brect(4, 8, 20, 22, C_LMAG); brect(w - 21, 8, w - 5, 22, C_LMAG);
-    brect(cx - 5, 3, cx + 4, 24, C_DGRAY);
-    brect(9, 12, 15, 18, PAL_GLOW + 8); brect(w - 16, 12, w - 10, 18, PAL_GLOW + 8);
-    bhline(17, w - 18, 8, C_WHITE); bhline(17, w - 18, 22, C_WHITE);
-  } else if (kind === 8) {   /* KRAKEN */
-    brect(12, 2, w - 13, 17, C_GREEN); brect(cx - 8, 6, cx + 7, 14, C_LGREEN);
-    brect(cx - 4, 9, cx + 3, 13, C_BLACK);
-    for (x = 5; x < w - 5; x += 9)
-      for (y = 17; y < h - 1; y++) bset(x + Math.trunc(sintab[(y * 5 + x) & 63] / 16), y, (y & 1) ? C_LGREEN : C_GREEN);
-    bset(cx - 2, 5, PAL_GLOW + 14); bset(cx + 2, 5, PAL_GLOW + 14);
-  } else if (kind === 9) {   /* PHANTOM */
-    for (y = 0; y < h; y++) {
-      const half = y < 8 ? (y >> 1) + 2 : y < 25 ? 10 : 18 - (y >> 1);
-      bhline(cx - half, cx + half, y, (y & 3) ? C_LBLUE : C_DGRAY);
-      if ((y & 3) === 0) brect(cx - half + 2, y, cx + half - 2, y, 0);
-    }
-    brect(cx - 2, 8, cx + 1, 22, C_WHITE);
-    bset(cx - 5, 13, C_LCYAN); bset(cx + 5, 13, C_LCYAN);
-  } else if (kind === 10) {  /* CITADEL */
-    brect(3, 9, w - 4, h - 4, C_DGRAY);
-    for (x = 6; x < w - 6; x += 12) brect(x, 3, x + 7, 12, C_LGRAY);
-    brect(cx - 7, 5, cx + 6, 25, C_LGRAY);
-    brect(cx - 3, 10, cx + 2, 17, C_RED);
-    for (x = 9; x < w - 9; x += 10) bset(x, h - 2, PAL_FIRE + 12);
-  } else if (kind === 11) {  /* VORTEX */
+    bmirror();
+  } else if (kind === 7) {   /* NEXUS - narrow core spire; pods orbit at run time */
     for (y = 0; y < h; y++) {
       const ay = Math.abs(y - (h >> 1));
-      const outer = ay < 4 ? 21 : ay < 9 ? 18 : ay < 14 ? 12 : 5;
-      const inner = ay < 5 ? 8 : ay < 9 ? 5 : 1;
-      bhline(cx - outer, cx - inner, y, C_LMAG);
-      bhline(cx + inner, cx + outer, y, C_LCYAN);
+      let half = 9 - Math.trunc(ay * 2 / 3);
+      if (half < 1) half = 1;
+      bhline(cx - half, cx + half, y, C_DGRAY);
+      bset(cx - half, y, C_LMAG);
+      bset(cx + half, y, C_LMAG);
     }
-    for (x = 6; x < w - 6; x += 8) { bset(x, h >> 1, C_WHITE); bset(w - x, (h >> 1) - 1, C_WHITE); }
-  } else if (kind === 12) {  /* BASILISK */
-    brect(6, 6, w - 7, h - 8, C_GREEN);
-    for (y = 0; y < h; y += 3) {
-      bhline(1, 8 + Math.trunc(y / 5), y, C_LGREEN);
-      bhline(w - 9 - Math.trunc(y / 5), w - 2, y, C_LGREEN);
-    }
-    brect(cx - 7, 9, cx + 6, 20, C_YELLOW);
-    brect(cx - 3, 12, cx + 2, 17, C_RED);
-    brect(cx - 1, 14, cx, 15, C_WHITE);
-  } else if (kind === 13) {  /* TITAN */
-    brect(2, 8, w - 3, h - 6, C_DGRAY);
-    brect(8, 3, w - 9, 12, C_LGRAY);
-    brect(cx - 10, 0, cx + 9, 21, C_LGRAY);
-    brect(cx - 4, 8, cx + 3, 20, PAL_FIRE + 8);
-    for (x = 6; x < w - 6; x += 9) brect(x, h - 8, x + 4, h - 2, C_RED);
-    brect(0, 16, 8, 27, C_LGRAY); brect(w - 9, 16, w - 1, 27, C_LGRAY);
-  } else {                   /* OVERLORD - tall magenta finale, white spine */
+    brect(cx - 3, 10, cx + 2, 17, PAL_GLOW + 8);
+    brect(cx - 1, 12, cx, 15, C_WHITE);
+    bset(cx - 1, 0, C_WHITE); bset(cx, 0, C_WHITE);
+    bset(cx - 1, h - 1, C_WHITE); bset(cx, h - 1, C_WHITE);
+  } else if (kind === 8) {   /* KRAKEN - bulbous mantle + eyes; tentacles at run time */
     for (y = 0; y < h; y++) {
-      const half = y < 8 ? 2 + y * 2 : y < 26 ? 20 : y < 34 ? 26 - (y - 26) : 14;
-      bhline(cx - half, cx + half, y, C_LMAG);
-      bset(cx - half, y, C_MAGENTA); bset(cx + half, y, C_MAGENTA);
+      let half = y < 4 ? 14 + y * 4 : y < 22 ? 30 : 30 - (y - 22) * 3;
+      if (half > 30) half = 30;
+      if (half < 6) half = 6;
+      bhline(cx - half, cx + half, y, C_GREEN);
+      bset(cx - half, y, C_LGREEN);
+      bset(cx + half, y, C_LGREEN);
     }
-    for (y = 6; y < h - 6; y++) { bset(cx - 1, y, C_WHITE); bset(cx, y, C_WHITE); }
-    brect(cx - 5, 16, cx + 4, 26, PAL_GLOW + 4);
-    for (x = 8; x < w - 8; x += 4) { bset(x, 8, PAL_GLOW + 12); bset(x, h - 8, PAL_GLOW + 10); }
-    for (y = 12; y < 28; y++) { bset(9, y, C_MAGENTA); bset(w - 10, y, C_MAGENTA); }
+    bdither(cx - 24, 3, cx + 24, 10, PAL_NEB + 10);
+    bdisc(cx - 12, 15, 4, C_WHITE);
+    bdisc(cx + 12, 15, 4, C_WHITE);
+    bdisc(cx - 12, 15, 2, C_BLACK);
+    bdisc(cx + 12, 15, 2, C_BLACK);
+    bset(cx - 13, 14, C_LCYAN); bset(cx + 11, 14, C_LCYAN);
+    brect(cx - 3, 22, cx + 2, 27, C_BLACK);
+    bset(cx - 1, 27, C_YELLOW); bset(cx, 27, C_YELLOW);
+  } else if (kind === 9) {   /* PHANTOM - hollow spectre: dashed outline */
+    for (y = 0; y < h; y++) {
+      let half = y < 10 ? 3 + y : y < 28 ? 13 : 13 - (y - 28);
+      if (half < 2) half = 2;
+      if ((y & 3) !== 3) {
+        bset(cx - half, y, (y & 1) ? C_LBLUE : C_LCYAN);
+        bset(cx + half, y, (y & 1) ? C_LBLUE : C_LCYAN);
+      }
+    }
+    bvline(cx - 1, 6, 26, C_WHITE);
+    bvline(cx, 6, 26, C_WHITE);
+    bset(cx - 5, 14, PAL_GLOW + 13); bset(cx + 5, 14, PAL_GLOW + 13);
+    bset(cx - 5, 15, PAL_GLOW + 13); bset(cx + 5, 15, PAL_GLOW + 13);
+    bdither(cx - 8, 30, cx + 8, 38, C_LBLUE);
+  } else if (kind === 10) {  /* CITADEL - crenellated battlement, three turret towers */
+    brect(1, 14, w - 2, 30, C_DGRAY);
+    bhline(1, w - 2, 14, C_LGRAY);
+    bdither(3, 24, w - 4, 29, C_LGRAY);
+    for (x = 2; x < w - 2; x += 8) brect(x, 10, x + 4, 14, C_LGRAY);
+    for (x = 0; x < 3; x++) {
+      const tx = x === 0 ? 8 : x === 1 ? cx - 6 : w - 20;
+      brect(tx, 2, tx + 11, 16, C_LGRAY);
+      bhline(tx, tx + 11, 2, C_WHITE);
+      brect(tx + 3, 6, tx + 8, 9, C_BLACK);
+      brect(tx + 4, 7, tx + 7, 8, C_RED);
+      bset(tx + 5, 17, PAL_FIRE + 12);
+    }
+    brect(cx - 5, 20, cx + 4, 29, C_BLACK);
+    brect(cx - 4, 21, cx + 3, 28, PAL_FIRE + 7);
+    for (x = 6; x < w - 6; x += 10) bset(x, 31, PAL_FIRE + 10);
+  } else if (kind === 11) {  /* VORTEX - split mag/cyan ring; orbs at run time */
+    bring(cx, 22, 15, 20, C_LMAG);
+    for (y = 0; y < h; y++)
+      for (x = cx; x < w; x++)
+        if (d[y*w+x] === C_LMAG) d[y*w+x] = C_LCYAN;
+    bring(cx, 22, 6, 8, C_LCYAN);
+    for (y = 0; y < h; y++)
+      for (x = 0; x < cx; x++)
+        if (d[y*w+x] === C_LCYAN) d[y*w+x] = C_LMAG;
+    brect(cx - 1, 21, cx, 22, C_WHITE);
+    bset(cx, 3, C_WHITE); bset(cx, 40, C_WHITE);
+    bset(3, 22, C_WHITE); bset(40, 22, C_WHITE);
+  } else if (kind === 12) {  /* BASILISK - serpent skull, one huge tracking eye */
+    for (y = 2; y < 30; y++) {
+      let half = y < 12 ? 10 + y : 22 - Math.trunc((y - 12) / 2);
+      if (half > 22) half = 22;
+      bhline(cx - half, cx + half, y, C_GREEN);
+      bset(cx - half, y, C_LGREEN);
+      bset(cx + half, y, C_LGREEN);
+    }
+    bdither(cx - 18, 16, cx + 18, 27, C_LGREEN);
+    for (x = 0; x < 4; x++) {
+      const sx = cx - 9 + x * 6;
+      bset(sx, 1, C_LGREEN);
+      bset(sx, 0, C_WHITE);
+    }
+    bring(cx, 13, 7, 8, C_YELLOW);
+    bdisc(cx, 13, 6, C_YELLOW);
+    bdisc(cx, 13, 4, C_RED);
+    brect(cx - 1, 12, cx, 14, C_BLACK);
+    bset(cx - 6, 28, C_WHITE); bset(cx + 5, 28, C_WHITE);
+    bset(cx - 6, 29, C_WHITE); bset(cx + 5, 29, C_WHITE);
+  } else if (kind === 13) {  /* TITAN - tri-layer dreadnought; armour breaks per phase */
+    brect(0, 26, w - 1, 38, C_DGRAY);
+    bdither(2, 27, w - 3, 33, C_LGRAY);
+    brect(6, 14, w - 7, 26, C_LGRAY);
+    brect(14, 4, w - 15, 14, C_DGRAY);
+    bhline(14, w - 15, 4, C_WHITE);
+    bhline(6, w - 7, 14, C_WHITE);
+    bhline(0, w - 1, 26, C_LGRAY);
+    brect(cx - 9, 0, cx + 8, 24, C_LGRAY);
+    bvline(cx - 9, 0, 24, C_DGRAY); bvline(cx + 8, 0, 24, C_DGRAY);
+    brect(cx - 4, 6, cx + 3, 20, PAL_FIRE + 8);
+    brect(cx - 2, 9, cx + 1, 17, PAL_FIRE + 13);
+    for (x = 10; x < w - 10; x += 12) {
+      brect(x, 30, x + 5, 36, C_RED);
+      bset(x + 2, 37, PAL_FIRE + 12);
+    }
+    for (x = 4; x < w - 4; x += 10) brect(x, 40, x + 4, 42, PAL_FIRE + 9);
+    brect(0, 16, 6, 30, C_LGRAY);
+    brect(w - 7, 16, w - 1, 30, C_LGRAY);
+  } else {                   /* OVERLORD - crowned obelisk finale, cycling core */
+    for (x = 0; x < 5; x++) {
+      const sx = cx - 12 + x * 6;
+      bvline(sx, x === 2 ? 0 : 2, 7, C_LMAG);
+      bset(sx, x === 2 ? 0 : 2, C_WHITE);
+    }
+    for (y = 7; y < 46; y++) {
+      const half = 8 + Math.trunc(y * 14 / 46);
+      bhline(cx - half, cx + half, y, C_MAGENTA);
+      bset(cx - half, y, C_LMAG);
+      bset(cx + half, y, C_LMAG);
+    }
+    bdither(cx - 18, 30, cx + 18, 44, C_LMAG);
+    bvline(cx - 1, 7, 45, C_WHITE);
+    bvline(cx, 7, 45, C_WHITE);
+    brect(cx - 6, 20, cx + 5, 32, PAL_GLOW + 4);
+    brect(cx - 3, 23, cx + 2, 29, PAL_GLOW + 10);
+    brect(2, 24, 8, 40, C_MAGENTA);
+    brect(w - 9, 24, w - 3, 40, C_MAGENTA);
+    bvline(5, 20, 23, C_LMAG); bvline(w - 6, 20, 23, C_LMAG);
+    bset(5, 19, C_WHITE); bset(w - 6, 19, C_WHITE);
+    bhline(8, cx - 8, 27, C_LMAG);
+    bhline(cx + 7, w - 9, 27, C_LMAG);
+    for (x = cx - 16; x <= cx + 16; x += 4) bset(x, 47, PAL_FIRE + 10);
+    bhline(cx - 20, cx + 20, 46, C_DGRAY);
   }
+  return d;
+}
+/* NEXUS orbiting fire-pod (drawn twice at boss.px[]/py[]) */
+function build_bosspod() {
+  const w = SH_POD_W, h = SH_POD_H;
+  const d = new Uint8Array(w * h);
+  const bset = (x, y, c) => { if (x >= 0 && x < w && y >= 0 && y < h) d[y*w+x] = c; };
+  for (let y = -5; y <= 5; y++)
+    for (let x = -5; x <= 5; x++) {
+      const d2 = x*x + y*y;
+      if (d2 >= 16 && d2 <= 25) bset(7+x, 6+y, C_LMAG);
+      else if (d2 <= 9) bset(7+x, 6+y, PAL_GLOW + 8);
+    }
+  bset(7, 6, C_WHITE);
   return d;
 }
 function make_banked_ships() {
@@ -459,6 +602,7 @@ function sprites_init() {
   spr_powerup[PU_BOMB]    = build_pu(C_LRED);
   spr_powerup[PU_SCORE]   = build_pu(C_WHITE);
   for (let b = 0; b < NBOSS; b++) spr_boss[b] = build_boss(b);
+  spr_bosspod = build_bosspod();
 }
 
 /* ================= input ================= */
@@ -761,7 +905,7 @@ async function submitScore(name, finalScore) {
 
 /* ================= game state (game.c) ================= */
 const player = {};
-const pbul = [], ebul = [], enemies = [], powr = [], part = [], stars = [], mslA = [], blast = [], dust = [];
+const pbul = [], ebul = [], enemies = [], powr = [], part = [], stars = [], mslA = [], blast = [], dust = [], popup = [];
 for (let i = 0; i < MAX_PBULLET; i++) pbul.push({active:false});
 for (let i = 0; i < MAX_EBULLET; i++) ebul.push({active:false});
 for (let i = 0; i < MAX_ENEMY; i++) enemies.push({active:false});
@@ -771,6 +915,18 @@ for (let i = 0; i < MAX_STARS; i++) stars.push({});
 for (let i = 0; i < MAX_MISSILE; i++) mslA.push({active:false});
 for (let i = 0; i < 10; i++) blast.push({active:false});
 for (let i = 0; i < 36; i++) dust.push({});
+for (let i = 0; i < 4; i++) popup.push({active:false});
+
+/* floating score/combo popup: rises for ~30 frames then fades out */
+function spawn_popup(x, y, s) {
+  for (const p of popup) if (!p.active) {
+    p.active = true; p.t = 30;
+    p.x = clamp(x, 2, SCRW - 8 * s.length - 2);
+    p.y = Math.max(12, y);
+    p.txt = s;
+    return;
+  }
+}
 
 const boss = { active:false };
 let score = 0, wave = 0, to_spawn = 0, spawn_cd = 0, wave_mix = 0;
@@ -802,10 +958,10 @@ function diff_boss_fire_cd() {
   const d = g_diff === DIF_EASY ? 8 : g_diff === DIF_HARD ? -8 : 0;
   switch (boss.kind) {
     case 0: return 54 + d - boss.phase * 8;
-    case 1: return 30 + d - boss.phase * 6;
+    case 1: return 34 + d - boss.phase * 6;    /* dives carry the threat */
     case 2: return 66 + d - boss.phase * 8;
     case 3: return 44 + d - boss.phase * 9;
-    case 4: return 42 + d - boss.phase * 8;
+    case 4: return 46 + d - boss.phase * 8;    /* lunges carry the threat */
     case 5: return 62 + d - boss.phase * 10;
     case 6: return 40 + d - boss.phase * 8;
     case 7: return 38 + d - boss.phase * 7;
@@ -813,7 +969,7 @@ function diff_boss_fire_cd() {
     case 9: return 34 + d - boss.phase * 7;
     case 10: return 48 + d - boss.phase * 8;
     case 11: return 36 + d - boss.phase * 7;
-    case 12: return 52 + d - boss.phase * 8;
+    case 12: return 56 + d - boss.phase * 8;   /* guillotine carries the threat */
     case 13: return 50 + d - boss.phase * 8;
     default: return 34 + d - boss.phase * 6;
   }
@@ -890,13 +1046,13 @@ function gen_nebula() {
 }
 
 function reset_game() {
-  for (const a of [pbul, ebul, enemies, powr, part, mslA, blast]) for (const o of a) o.active = false;
+  for (const a of [pbul, ebul, enemies, powr, part, mslA, blast, popup]) for (const o of a) o.active = false;
   boss.active = false;
   player.x = 152; player.y = 168;
   player.lives = g_diff === DIF_EASY ? 5 : g_diff === DIF_HARD ? 2 : 3;
   player.gun = GUN_MIN; player.wtype = WT_CANNON;
   player.msl = 5; player.bombs = g_diff === DIF_HARD ? 1 : 2;
-  player.shield = g_diff === DIF_EASY ? 400 : 0;
+  player.shield = g_diff === DIF_EASY ? 200 : 0;   /* easy: brief invuln head-start */
   player.invuln = 0; player.firecd = 0; player.rapid = 0;
   player.boost = BOOST_MAX; player.boost_cd = 0; player.boosting = false;
   player.combo = 0; player.combo_t = 0; player.max_combo = 0; player.alive = true;
@@ -961,6 +1117,9 @@ function start_wave() {
     boss.dir = 1; boss.t = 0; boss.firecd = 60; boss.charge = 0;
     boss.tx = boss.x; boss.ty = 0; boss.mv_t = 50;
     boss.launch_t = 90; boss.squads = 0;
+    boss.hurt_t = 0; boss.dive_t = 0; boss.die_t = 0;
+    boss.px = [0, 0]; boss.py = [0, 0];
+    boss.warn = 70;                     /* WARNING banner before the entrance */
     to_spawn = 0;
     snd_sfx(SFX_BOSS);
   } else {
@@ -983,9 +1142,9 @@ function init_enemy(e, type, x) {
   e.active = true; e.type = type;
   e.base = x; e.x = x; e.y = -SH_EN_H;
   e.t = rrange(0, 63);
-  e.vy = 1 + (wave > 6 ? 1 : 0) + (g_diff === DIF_HARD ? 1 : 0);
+  e.vy = 1 + (wave > 6 ? 1 : 0) + (wave > 24 ? 1 : 0) + (g_diff === DIF_HARD ? 1 : 0);
   e.firecd = rrange(40, 90) + diff_enemy_fire_adjust();
-  let elite_chance = wave >= 13 ? 18 : 12;
+  let elite_chance = wave >= 20 ? 22 : wave >= 13 ? 18 : 12;
   if (g_diff === DIF_EASY) elite_chance -= 4;
   if (g_diff === DIF_HARD) elite_chance += 5;
   e.elite = (wave >= 7 && (rnd() % 100) < elite_chance) ? 1 : 0;
@@ -1054,9 +1213,42 @@ function spawn_enemy() {
     return;
   }
   for (const e of enemies) if (!e.active) {
-    init_enemy(e, pick_type(), rrange(8, SCRW - SH_EN_W - 8));
+    /* pick a drip x that doesn't drop straight onto a fresh spawn */
+    let x = rrange(8, SCRW - SH_EN_W - 8);
+    for (let tries = 0; tries < 4; tries++) {
+      let clear = true;
+      for (const o of enemies) if (o.active && o.y < 30 && Math.abs(x - o.x) < SH_EN_W + 2) { clear = false; break; }
+      if (clear) break;
+      x = rrange(8, SCRW - SH_EN_W - 8);
+    }
+    init_enemy(e, pick_type(), x);
     to_spawn--;
     return;
+  }
+}
+
+/* One separation pass: push overlapping enemy pairs 1 px apart so formations
+   and drips never sit stacked. Weavers recompute x from base each frame, so
+   their push goes through base. Mirrors the native separate_enemies(). */
+function separate_enemies() {
+  for (let a = 0; a < MAX_ENEMY - 1; a++) {
+    if (!enemies[a].active) continue;
+    for (let b = a + 1; b < MAX_ENEMY; b++) {
+      if (!enemies[b].active) continue;
+      const dy = enemies[a].y - enemies[b].y;
+      if (dy >= 12 || dy <= -12) continue;
+      const dx = enemies[a].x - enemies[b].x;
+      if (dx >= 14 || dx <= -14) continue;
+      let lo, hi;
+      if (dx < 0 || (dx === 0 && (a & 1))) { lo = enemies[a]; hi = enemies[b]; }
+      else { lo = enemies[b]; hi = enemies[a]; }
+      const lk = lo.type === E_WEAVER ? 'base' : 'x';
+      const hk = hi.type === E_WEAVER ? 'base' : 'x';
+      let moved = false;
+      if (lo[lk] > 4) { lo[lk]--; moved = true; }
+      if (hi[hk] < SCRW - SH_EN_W - 4) { hi[hk]++; moved = true; }
+      if (!moved) enemies[b].y++;      /* both pinned: slip one downward */
+    }
   }
 }
 
@@ -1204,17 +1396,18 @@ function boss_fire() {
       add_ebullet(bx - 16, by, -2, 3); add_ebullet(bx + 16, by, 2, 3); add_ebullet(bx, by, 0, 5);
     }
     break;
-  case 7:                                    /* NEXUS */
+  case 7: {                                  /* NEXUS: the orbiting pods own the crossfire */
+    const p0x = boss.px[0], p0y = boss.py[0], p1x = boss.px[1], p1y = boss.py[1];
     if (boss.atk === 1) {
-      add_ebullet(boss.x + 12, by, 2, 3); add_ebullet(boss.x + boss.w - 12, by, -2, 3);
-      add_ebullet(boss.x + 12, by, 1, 4); add_ebullet(boss.x + boss.w - 12, by, -1, 4);
+      add_ebullet(p0x, p0y, 2, 3); add_ebullet(p1x, p1y, -2, 3);
+      add_ebullet(p0x, p0y, 1, 4); add_ebullet(p1x, p1y, -1, 4);
     } else if (boss.atk === 2) {
-      add_ebullet(boss.x + 12, by, dir, 4); add_ebullet(boss.x + boss.w - 12, by, dir, 4);
+      add_ebullet(p0x, p0y, dir, 4); add_ebullet(p1x, p1y, dir, 4);
       if (boss.phase >= 1) add_ebullet(bx, by, 0, 5);
     } else {
-      add_ebullet(boss.x + 12, by, 0, 4); add_ebullet(boss.x + boss.w - 12, by, 0, 4); add_ebullet(bx, by - 5, dir, 3);
+      add_ebullet(p0x, p0y, 0, 4); add_ebullet(p1x, p1y, 0, 4); add_ebullet(bx, by - 5, dir, 3);
     }
-    break;
+    break; }
   case 8:                                    /* KRAKEN */
     if (boss.atk === 1) {
       for (let k = 0; k < 4; k++) add_ebullet(boss.x + 8 + k * 14, by - (k & 1) * 6, (k & 1) ? 1 : -1, 3);
@@ -1237,8 +1430,8 @@ function boss_fire() {
       for (let k = 0; k < 5; k++) if ((Math.trunc(boss.t / 18) + k) % 3 !== 1) add_ebullet(boss.x + 9 + k * 11, by, 0, 3);
     } else if (boss.atk === 2) {
       add_ebullet(boss.x + 12, by, -1, 4); add_ebullet(boss.x + boss.w - 12, by, 1, 4); add_ebullet(bx, by, dir, 4);
-    } else {
-      for (let k = -2; k <= 2; k++) add_ebullet(bx + k * 12, by, Math.trunc(k / 2), 3);
+    } else {                                 /* turrets rake along the travel direction */
+      for (let k = -2; k <= 2; k++) add_ebullet(bx + k * 12, by, boss.dir + Math.trunc(k / 2), 3);
     }
     break;
   case 11:                                   /* VORTEX */
@@ -1305,58 +1498,164 @@ function move_toward(v, target, step) {
   if (v > target) return Math.max(target, v - step);
   return v;
 }
+/* Per-boss bottom of the movement envelope (mirror of native boss_max_y). */
+const BOSS_MAX_Y = [126, 150, 40, 96, 150, 140, 110, 100, 116, 110,
+                    100, 120, 150, 126, 150];
+function boss_max_y() { return BOSS_MAX_Y[boss.kind]; }
+
+/* Campaign bosses each own a movement band and motion language. Every move
+   that invades the player's zone is telegraphed via boss.charge first.
+   Mirror of the native boss_move(). */
 function boss_move() {
   const cx = (SCRW>>1) - (boss.w>>1);
   switch (boss.kind) {
-  case 0:
-    boss.x += boss.dir;
-    boss.y = 84 + (((boss.t >> 5) & 1) * 3);
+  case 0:                                   /* GORGON: wall crawl + rampart slam */
+    if (boss.ty === 1) {                    /* telegraph: dig in */
+      if (--boss.dive_t <= 0) boss.ty = 2;
+    } else if (boss.ty === 2) {             /* slam down */
+      boss.y += 4;
+      if (boss.y >= (boss.phase >= 1 ? 126 : 118)) { boss.ty = 3; boss.dive_t = 40; }
+    } else if (boss.ty === 3) {             /* grind sideways at depth */
+      boss.x += boss.dir * 2;
+      if (--boss.dive_t <= 0) boss.ty = 4;
+    } else if (boss.ty === 4) {             /* winch back up */
+      boss.y -= 1;
+      if (boss.y <= 84) { boss.y = 84; boss.ty = 0;
+        boss.mv_t = boss.phase >= 2 ? 110 : 160; }
+    } else {                                /* rampart crawl */
+      boss.x += boss.dir * (1 + (boss.phase >= 2 ? 1 : 0));
+      boss.y = 84 + (((boss.t >> 5) & 1) * 3);
+      if (--boss.mv_t <= 0) { boss.ty = 1; boss.dive_t = 24; boss.charge = 24; }
+    }
     break;
-  case 1:
-    if (boss.ty === 0) {
+  case 1:                                   /* REAPER: dives through the player band */
+    if (boss.ty === 0) {                    /* strafe high, pick a mark */
       boss.y = 18 + Math.trunc((sintab[boss.t & 63] + 46) / 30);
       boss.x = move_toward(boss.x, boss.tx, 2);
-      if (--boss.mv_t <= 0) { boss.ty = 1; boss.tx = player.x + 8 - (boss.w>>1); }
-    } else if (boss.ty === 1) {
+      if (--boss.mv_t <= 0) {
+        boss.ty = 1; boss.charge = 20;
+        boss.tx = player.x + 8 - (boss.w>>1);
+        boss.dive_t = boss.phase >= 2 ? 2 : 1;    /* chained dives */
+      }
+    } else if (boss.ty === 1) {             /* dive deep, afterimage trail */
       boss.x = move_toward(boss.x, boss.tx, 4);
-      boss.y = move_toward(boss.y, 98, 5);
-      if (boss.y >= 98) boss.ty = 2;
-    } else {
-      boss.x += boss.dir * 3;
-      boss.y = move_toward(boss.y, 18, 4);
-      if (boss.y <= 18) { boss.ty = 0; boss.mv_t = 44 - boss.phase * 10; boss.tx = rrange(8, SCRW - boss.w - 8); }
+      boss.y += 5;
+      if (frame & 1) spawn_part(boss.x + (boss.w>>1), boss.y, C_LRED);
+      if (boss.y >= 150) boss.ty = 2;
+    } else {                                /* strafing arc back up */
+      boss.x += Math.trunc(sintab[(boss.t * 2) & 63] / 12);
+      boss.y -= 4;
+      if (boss.y <= 18) {
+        boss.y = 18;
+        if (--boss.dive_t > 0) {            /* enraged: chain the next dive */
+          boss.ty = 1; boss.charge = 20;
+          boss.tx = player.x + 8 - (boss.w>>1);
+        } else {
+          boss.ty = 0; boss.mv_t = 44 - boss.phase * 10;
+          boss.tx = rrange(8, SCRW - boss.w - 8);
+        }
+      }
     }
     break;
-  case 2:
-    if (--boss.mv_t <= 0) { boss.mv_t = 70; boss.tx = (rnd() & 1) ? 8 : SCRW - boss.w - 8; }
-    boss.x = move_toward(boss.x, boss.tx, 1);
-    boss.y = 8 + Math.trunc((sintab[boss.t & 63] + 46) / 40);
+  case 2:                                   /* LEVIATHAN: hover + bombing trawl */
+    if (boss.ty === 0) {                    /* high hover between runs */
+      boss.y = 8 + Math.trunc((sintab[boss.t & 63] + 46) / 40);
+      boss.x = move_toward(boss.x, boss.tx, 1);
+      if ((boss.t & 63) === 0) boss.tx = rrange(8, SCRW - boss.w - 8);
+      if (--boss.mv_t <= 0) {
+        boss.ty = 1; boss.dive_t = 24; boss.charge = 24;
+        boss.dir = boss.x < cx ? 1 : -1;    /* trawl toward the far wall */
+      }
+    } else if (boss.ty === 1) {             /* engines spool up */
+      if (--boss.dive_t <= 0) boss.ty = 2;
+    } else {                                /* full-width trawl, bombs from both bays */
+      boss.x += boss.dir * (3 + (boss.phase >= 1 ? 1 : 0));
+      boss.y = 10;
+      if ((boss.t & (boss.phase >= 2 ? 7 : 15)) === 0) {
+        add_ebullet(boss.x + 10, boss.y + boss.h - 4, 0, 3);
+        add_ebullet(boss.x + boss.w - 14, boss.y + boss.h - 4, 0, 3);
+      }
+      if (boss.x <= 8 || boss.x >= SCRW - boss.w - 8) {
+        boss.ty = 0; boss.mv_t = 200; boss.tx = boss.x;
+      }
+    }
     if (--boss.launch_t <= 0) { launch_squad(); boss.launch_t = 180 - boss.phase * 40; }
     break;
-  case 3:
-    boss.x = cx + Math.trunc(sintab[(boss.t * 2) & 63] * (3 + boss.phase) / 2);
-    boss.y = 46 + Math.trunc(sintab[(boss.t + 16) & 63] / 6);
+  case 3: {                                 /* SEEKER: circles the player, closing in */
+    const mul = 3 - boss.phase;             /* orbit tightens per phase */
+    boss.tx = move_toward(boss.tx, player.x + 8 - (boss.w>>1), 1);
+    boss.x = boss.tx + Math.trunc(sintab[(boss.t * 2) & 63] * mul / 2);
+    boss.y = 46 + Math.trunc(sintab[(boss.t * 2 + 16) & 63] * mul / 3);
     boss.dir = sintab[(boss.t * 2 + 16) & 63] >= 0 ? 1 : -1;
-    break;
-  case 4:
-    if (--boss.mv_t <= 0) {
-      boss.mv_t = 56;
-      boss.tx = boss.tx < cx ? SCRW - boss.w - 18 : 18;
+    break; }
+  case 4:                                   /* MANTIS: wall-cling + cross-screen lunge */
+    if (boss.ty === 0) {                    /* slide along the wall */
+      boss.x = move_toward(boss.x, boss.dir > 0 ? 6 : SCRW - boss.w - 6, 3);
+      boss.y = 60 + Math.trunc(sintab[(boss.t * 2) & 63] / 2);
+      if (--boss.mv_t <= 0) {
+        boss.ty = 1; boss.dive_t = 24; boss.charge = 24;
+        boss.py[0] = clamp(player.y, 20, 150);    /* lock the lunge lane */
+      }
+    } else if (boss.ty === 1) {             /* line up with the player */
+      boss.y = move_toward(boss.y, boss.py[0], 3);
+      if (--boss.dive_t <= 0) { boss.ty = 2; boss.dive_t = 10; }
+    } else {                                /* lunge across the screen */
+      boss.x += boss.dir * 5;
+      if (boss.phase >= 2 && boss.dive_t > 0 &&
+          boss.x + (boss.w>>1) >= player.x && boss.x + (boss.w>>1) <= player.x + 16) {
+        boss.x -= boss.dir * 5;             /* menacing mid-lunge pause */
+        boss.dive_t--;
+      }
+      if (boss.x <= 6 || boss.x >= SCRW - boss.w - 6) {
+        boss.dir = -boss.dir;               /* attach to the far wall */
+        if (boss.phase >= 1 && (rnd() % 100) < 40) {
+          boss.ty = 1; boss.dive_t = 16; boss.charge = 16;   /* quick re-lunge */
+          boss.py[0] = clamp(player.y, 20, 150);
+        } else {
+          boss.ty = 0; boss.mv_t = 56 - boss.phase * 8;
+        }
+      }
     }
-    boss.x = move_toward(boss.x, boss.tx, 3);
-    boss.y = 28 + Math.trunc(sintab[(boss.t * 2) & 63] / 9);
     break;
-  case 5:
-    boss.x = cx + Math.trunc(sintab[(boss.t >> 1) & 63] / 3);
-    boss.y = (boss.t & 95) < 42 ? move_toward(boss.y, 96, 2 + boss.phase) : move_toward(boss.y, 64, 1);
-    if ((boss.t & 95) === 0) boss.charge = 18;
+  case 5:                                   /* ANVIL: hover, then floor crush */
+    if (boss.ty === 0) {                    /* drift above the lane */
+      boss.x = cx + Math.trunc(sintab[(boss.t >> 1) & 63] / 2);
+      boss.y = move_toward(boss.y, 64, 1);
+      if (--boss.mv_t <= 0) { boss.ty = 1; boss.dive_t = 22; boss.charge = 22; }
+    } else if (boss.ty === 1) {             /* telegraph, edge over the player */
+      boss.x = move_toward(boss.x, player.x + 8 - (boss.w>>1), 2);
+      if (--boss.dive_t <= 0) { boss.ty = 2; boss.dive_t = 0; }
+    } else if (boss.ty === 2) {             /* crush */
+      boss.y += 5;
+      if (boss.y >= 140) {
+        boss.y = 140; shk = 10; snd_sfx(SFX_EXPLODE);
+        for (let k = 1; k <= 3; k++) {      /* horizontal shockwave along the floor */
+          add_ebullet(boss.x + (boss.w>>1), boss.y + boss.h - 6, k, 0);
+          add_ebullet(boss.x + (boss.w>>1), boss.y + boss.h - 6, -k, 0);
+        }
+        boss.ty = 3;
+        boss.dive_t = boss.phase >= 2 ? 1 : 0;    /* enraged: double crush */
+      }
+    } else {                                /* rise; maybe side-step + crush again */
+      boss.y -= boss.dive_t ? 3 : 1;
+      if (boss.dive_t && boss.y <= 100) {
+        boss.x += player.x + 8 > boss.x + (boss.w>>1) ? 40 : -40;
+        boss.ty = 2; boss.dive_t = 0; boss.charge = 20;
+      } else if (boss.y <= 64) {
+        boss.y = 64; boss.ty = 0;
+        boss.mv_t = 96 - boss.phase * 30;
+      }
+    }
     break;
-  case 6:
-    boss.x = cx + Math.trunc(sintab[(boss.t * 2) & 63] * 5 / 4);
-    boss.y = 18 + Math.trunc((sintab[(boss.t + 12) & 63] + 46) / 12);
-    boss.dir = sintab[(boss.t * 2 + 16) & 63] >= 0 ? 1 : -1;
-    break;
-  case 7:
+  case 6: {                                 /* SERAPH: pendulum scythe sweep */
+    const ph = boss.phase >= 2 ? boss.t * 2 : boss.t;
+    const s = sintab[ph & 63];
+    const as = s < 0 ? -s : s;
+    boss.x = cx + Math.trunc(s * 7 / 4);
+    boss.y = 20 + (46 - as) * 2 + (boss.phase >= 2 ? 12 : 0);
+    boss.dir = sintab[(ph + 16) & 63] >= 0 ? 1 : -1;
+    break; }
+  case 7: {                                 /* NEXUS: anchored core, orbiting fire-pods */
     if (--boss.mv_t <= 0) {
       boss.mv_t = 62;
       boss.ty = (boss.ty + 1) % 3;
@@ -1364,59 +1663,177 @@ function boss_move() {
     }
     boss.x = move_toward(boss.x, boss.tx, 2);
     boss.y = 40 + Math.trunc(sintab[(boss.t * 3) & 63] / 12);
-    break;
-  case 8:
-    boss.x = cx + sintab[boss.t & 63];
-    boss.y = 14 + Math.trunc((sintab[(boss.t * 2 + 8) & 63] + 46) / 24);
-    if (--boss.launch_t <= 0) { launch_squad(); boss.launch_t = 205 - boss.phase * 36; }
-    break;
-  case 9:
-    if (--boss.mv_t <= 0) {
-      boss.mv_t = 64 - boss.phase * 8;
-      boss.tx = rrange(18, SCRW - boss.w - 18);
-      boss.ty = rrange(22, 68);
-      boss.charge = 12;
+    boss.spin = (boss.spin + 1) & 63;
+    let pcx = boss.x + (boss.w>>1);
+    let pcy = boss.y + (boss.h>>1);
+    if (boss.phase >= 2) {                  /* pods detach low, converge on the player */
+      pcx = (pcx + player.x + 8) >> 1;
+      pcy += 30;
     }
-    boss.x = move_toward(boss.x, boss.tx, 5);
-    boss.y = move_toward(boss.y, boss.ty, 4);
+    boss.px[0] = pcx + Math.trunc(sintab[boss.spin & 63] * 26 / 46);
+    boss.py[0] = pcy + Math.trunc(sintab[(boss.spin + 16) & 63] * 12 / 46);
+    boss.px[1] = pcx - Math.trunc(sintab[boss.spin & 63] * 26 / 46);
+    boss.py[1] = pcy - Math.trunc(sintab[(boss.spin + 16) & 63] * 12 / 46);
+    break; }
+  case 8: {                                 /* KRAKEN: advancing wall, recoils on phase change */
+    const depth = 88 + boss.phase * 8;
+    boss.x = cx + sintab[boss.t & 63];
+    if (boss.ty === 1) {                    /* recoil back to the top */
+      boss.y -= 3;
+      if (boss.y <= 14) { boss.y = 14; boss.ty = 0; }
+    } else if ((boss.t & 3) === 0 && boss.y < depth) boss.y++;
+    if (--boss.launch_t <= 0) { launch_squad(); boss.launch_t = 205 - boss.phase * 36; }
+    break; }
+  case 9:                                   /* PHANTOM: true telegraphed teleports */
+    if (boss.ty === 0) {                    /* materialised: drift + countdown */
+      boss.x += Math.trunc(sintab[(boss.t * 2) & 63] / 24);
+      if (--boss.mv_t <= 0) { boss.ty = 1; boss.dive_t = 16; }
+    } else if (boss.ty === 1) {             /* dematerialise (checkerboard mask) */
+      if (--boss.dive_t <= 0) {
+        if (boss.phase >= 2 && (++boss.px[1] % 3) === 0) {
+          boss.tx = player.x + 8 - (boss.w>>1);   /* land on the player */
+          boss.px[0] = player.y - boss.h - 12;
+        } else if (boss.phase >= 1) {             /* biased near the player */
+          boss.tx = player.x + 8 - (boss.w>>1) + rrange(-40, 40);
+          boss.px[0] = rrange(22, 96);
+        } else {
+          boss.tx = rrange(18, SCRW - boss.w - 18);
+          boss.px[0] = rrange(22, 80);
+        }
+        boss.px[0] = clamp(boss.px[0], 16, 110);
+        boss.x = boss.tx; boss.y = boss.px[0];    /* blink */
+        boss.ty = 2; boss.dive_t = 8;
+        snd_sfx(SFX_PHASE);
+        for (let k = 0; k < 8; k++)               /* arrival burst */
+          add_ebullet(boss.x + (boss.w>>1), boss.y + (boss.h>>1),
+                      Math.trunc(sintab[(k * 8) & 63] / 14),
+                      2 + (sintab[(k * 8 + 16) & 63] > 0 ? 2 : 0));
+      }
+    } else {                                /* re-materialise */
+      if (--boss.dive_t <= 0) { boss.ty = 0; boss.mv_t = 64 - boss.phase * 8; }
+    }
     break;
-  case 10:
-    boss.x += boss.dir;
-    if ((boss.t & 31) === 0) boss.dir = player.x + 8 > boss.x + (boss.w>>1) ? 1 : -1;
-    boss.y = 70 + (((boss.t >> 4) & 1) * 2);
-    break;
-  case 11:
-    boss.x = cx + sintab[(boss.t * 2) & 63];
-    boss.y = 44 + Math.trunc(sintab[(boss.t * 2 + 16) & 63] / 4);
+  case 10: {                                /* CITADEL: perimeter patrol, corner to corner */
+    const x0 = 18 + boss.phase * 10, x1 = SCRW - boss.w - 18 - boss.phase * 10;
+    const y0 = 40 + boss.phase * 8, y1 = 96;
+    const spd = boss.phase >= 2 ? 2 : 1;
+    const gx = (boss.ty === 1 || boss.ty === 2) ? x1 : x0;   /* ty = corner index */
+    const gy = boss.ty >= 2 ? y1 : y0;
+    boss.x = move_toward(boss.x, gx, spd);
+    boss.y = move_toward(boss.y, gy, spd);
+    if (boss.x === gx && boss.y === gy) boss.ty = (boss.ty + 1) & 3;
+    boss.dir = gx > boss.x ? 1 : -1;        /* turrets rake the travel direction */
+    break; }
+  case 11: {                                /* VORTEX: breathing spiral over the player */
+    let r = 14 + Math.trunc((sintab[(boss.t >> 1) & 63] + 46) / (boss.phase >= 2 ? 3 : 4));
+    const oi = boss.t * (boss.phase >= 2 ? 3 : 2);
+    if (boss.phase >= 2 && r < 22) r = 22;  /* radius floor when enraged */
+    boss.tx = move_toward(boss.tx, player.x + 8 - (boss.w>>1), 1);
+    boss.x = boss.tx + Math.trunc(sintab[oi & 63] * r / 46);
+    boss.y = 52 + Math.trunc(sintab[(oi + 16) & 63] * r / 60);
     boss.spin = (boss.spin + 2) & 63;
+    break; }
+  case 12:                                  /* BASILISK: stalks the column, guillotines it */
+    if (boss.ty === 0) {                    /* track the player's x */
+      boss.tx = player.x + 8 - (boss.w>>1);
+      boss.x = move_toward(boss.x, boss.tx, 2 + (boss.phase >= 1 ? 1 : 0));
+      boss.y = 24 + Math.trunc((sintab[(boss.t + 8) & 63] + 46) / 18);
+      if (--boss.mv_t <= 0) { boss.ty = 1; boss.dive_t = 24; boss.charge = 24; }
+    } else if (boss.ty === 1) {             /* frozen eye telegraph */
+      if (--boss.dive_t <= 0) boss.ty = 2;
+    } else if (boss.ty === 2) {             /* guillotine drop */
+      boss.y += 5;
+      if (boss.y >= 150) boss.ty = 3;
+    } else {                                /* drag back up, raking the corridor */
+      boss.y -= 2;
+      if ((boss.t & 7) === 0) {
+        add_ebullet(boss.x + 2, boss.y + (boss.h>>1), -1, 3);
+        add_ebullet(boss.x + boss.w - 6, boss.y + (boss.h>>1), 1, 3);
+      }
+      if (boss.y <= 26) {
+        boss.ty = 0;
+        boss.mv_t = boss.phase >= 2 ? 90 : 150;
+      }
+    }
     break;
-  case 12:
-    boss.tx = player.x + 8 - (boss.w>>1);
-    boss.x = move_toward(boss.x, boss.tx, 2);
-    boss.y = 24 + Math.trunc((sintab[(boss.t + 8) & 63] + 46) / 18);
-    if ((boss.t & 95) === 0) boss.charge = 18;
+  case 13:                                  /* TITAN: quake slams; steamrolls when enraged */
+    if (boss.ty === 0) {                    /* heavy crawl */
+      boss.x += boss.dir;
+      boss.y = move_toward(boss.y, 88, 1);
+      if (--boss.mv_t <= 0) {
+        boss.dive_t = 24; boss.charge = 24;
+        if (boss.phase >= 2 && (boss.px[1] ^= 1) !== 0) {
+          boss.ty = 3;                      /* every other attack: steamroll */
+          boss.dir = boss.x < cx ? 1 : -1;
+        } else boss.ty = 1;
+      }
+    } else if (boss.ty === 1) {             /* telegraph */
+      if (--boss.dive_t <= 0) boss.ty = 2;
+    } else if (boss.ty === 2) {             /* quake slam */
+      boss.y += 4;
+      if (boss.y >= 120) {
+        boss.y = 120; shk = 16; snd_sfx(SFX_EXPLODE);
+        for (let k = -2; k <= 2; k++)       /* vertical bullet columns */
+          add_ebullet(boss.x + (boss.w>>1) + k * 22, boss.y + boss.h - 4, 0, 4);
+        boss.ty = 4;
+      }
+    } else if (boss.ty === 3) {             /* steamroll charge */
+      if (boss.dive_t > 0) { boss.dive_t--; boss.y = move_toward(boss.y, 104, 2); }
+      else {
+        boss.x += boss.dir * 3;
+        if (boss.x <= 4 || boss.x >= SCRW - boss.w - 4) boss.ty = 4;
+      }
+    } else {                                /* recover */
+      boss.y -= 1;
+      if (boss.y <= 88) { boss.y = 88; boss.ty = 0; boss.mv_t = 120 - boss.phase * 20; }
+    }
     break;
-  case 13:
-    boss.x += boss.dir;
-    boss.y = (boss.t & 127) < 44 ? move_toward(boss.y, 88, 1) : move_toward(boss.y, 104, 1 + boss.phase);
-    if ((boss.t & 127) === 0) boss.charge = 18;
-    break;
-  default:
-    boss.x = cx + Math.trunc(sintab[(boss.t * 2) & 63] * 3 / 2);
-    boss.y = 16 + Math.trunc((sintab[(boss.t * 3 + 16) & 63] + 46) / 4);
-    if ((boss.t & 127) === 0) boss.charge = 18;
+  default:                                  /* OVERLORD: finale speaks every boss's language */
+    if (boss.phase === 0) {                 /* figure-eight */
+      boss.x = cx + Math.trunc(sintab[(boss.t * 2) & 63] * 3 / 2);
+      boss.y = 16 + Math.trunc((sintab[(boss.t * 3 + 16) & 63] + 46) / 4);
+      if ((boss.t & 127) === 0) boss.charge = 18;
+    } else if (boss.phase === 1) {          /* PHANTOM: telegraphed blinks */
+      if (boss.ty === 0) {
+        if (--boss.mv_t <= 0) { boss.ty = 1; boss.dive_t = 14; }
+      } else if (boss.ty === 1) {
+        if (--boss.dive_t <= 0) {
+          boss.x = rrange(18, SCRW - boss.w - 18);
+          boss.y = rrange(16, 84);
+          boss.ty = 2; boss.dive_t = 8;
+          snd_sfx(SFX_PHASE);
+        }
+      } else if (--boss.dive_t <= 0) { boss.ty = 0; boss.mv_t = 52; }
+    } else if (boss.ty === 3) {             /* REAPER: one dive per orbit cycle */
+      boss.x = move_toward(boss.x, boss.tx, 4);
+      boss.y += 5;
+      if (frame & 1) spawn_part(boss.x + (boss.w>>1), boss.y, C_LMAG);
+      if (boss.y >= 150) boss.ty = 4;
+    } else if (boss.ty === 4) {             /* retreat from the dive */
+      boss.y -= 4;
+      if (boss.y <= 20) { boss.ty = 0; boss.mv_t = 140; }
+    } else {                                /* SEEKER: tightening player orbit */
+      boss.tx = move_toward(boss.tx, player.x + 8 - (boss.w>>1), 1);
+      boss.x = boss.tx + sintab[(boss.t * 2) & 63];
+      boss.y = 20 + Math.trunc((sintab[(boss.t * 2 + 16) & 63] + 46) / 2);
+      if (--boss.mv_t <= 0) {
+        boss.ty = 3; boss.charge = 20;
+        boss.tx = player.x + 8 - (boss.w>>1);
+      }
+    }
+    boss.spin = (boss.spin + 1) & 63;       /* crown spokes always turn */
     break;
   }
   if (boss.x < 4) { boss.x = 4; boss.dir = 1; }
   if (boss.x > SCRW - boss.w - 4) { boss.x = SCRW - boss.w - 4; boss.dir = -1; }
   if (boss.y < 6) boss.y = 6;
-  if (boss.y > SCRH - boss.h - 70) boss.y = SCRH - boss.h - 70;
+  if (boss.y > boss_max_y()) boss.y = boss_max_y();
 }
 function boss_rest_y() {
   switch (boss.kind) {
     case 0: return 84; case 1: return 18; case 2: return 9; case 3: return 46;
-    case 4: return 30; case 5: return 64; case 6: return 18; case 7: return 40;
-    case 8: return 14; case 9: return 28; case 10: return 70; case 11: return 44;
+    case 4: return 60; case 5: return 64; case 6: return 20; case 7: return 40;
+    case 8: return 14; case 9: return 28; case 10: return 40; case 11: return 52;
     case 12: return 24; case 13: return 88; default: return 16;
   }
 }
@@ -1449,7 +1866,7 @@ function apply_powerup(type) {
   switch (type) {
     case PU_GUN:     if (player.gun < GUN_MAX) player.gun++; break;
     case PU_RAPID:   player.rapid = 700; break;
-    case PU_SHIELD:  player.shield = 500; break;
+    case PU_SHIELD:  player.shield = 350; break;   /* ~10 s of invulnerability at 35 FPS */
     case PU_LIFE:    if (player.lives < 9) player.lives++; break;
     case PU_MISSILE: player.msl = Math.min(30, player.msl + 4); break;
     case PU_LASER:   player.wtype = WT_LASER; break;
@@ -1463,8 +1880,9 @@ function apply_powerup(type) {
   score_add(50);
 }
 function apply_boss_damage(dmg) {
-  if (!boss.active) return;
+  if (!boss.active || boss.die_t > 0) return;
   boss.hp -= dmg;
+  boss.hurt_t = 3;
   burst(boss.x + (boss.w>>1), boss.y + (boss.h>>1), 8, C_WHITE, C_YELLOW);
   if (boss.hp <= 0) boss_die();
 }
@@ -1480,21 +1898,24 @@ function smart_bomb() {
     e.hp -= 5;
     if (e.hp <= 0) { score_add(100); kill_enemy(e); }
   }
-  if (boss.active) apply_boss_damage(boss_pct_damage(3));
+  if (boss.active) apply_boss_damage(boss_pct_damage(4));
   snd_sfx(SFX_EXPLODE);
 }
 
 /* ---------------- damage ---------------- */
 function hurt_player() {
   if (player.invuln > 0) return;
-  wave_hit = 1; combo_broken = 1;
-  player.combo = 0; player.combo_t = 0;
+  /* Active shield = full invulnerability for its whole duration: absorb the
+     hit without popping the shield or breaking the combo. Brief i-frames
+     keep it to one spark per incoming shot. */
   if (player.shield > 0) {
-    player.shield = 0; player.invuln = 40;
-    burst(player.x+8, player.y+8, 12, C_LBLUE, C_WHITE);
+    player.invuln = 8;
+    burst(player.x+8, player.y+8, 10, C_LBLUE, C_WHITE);
     snd_sfx(SFX_HIT);
     return;
   }
+  wave_hit = 1; combo_broken = 1;
+  player.combo = 0; player.combo_t = 0;
   player.lives--;
   player.invuln = 90;
   player.rapid = 0;
@@ -1507,7 +1928,7 @@ function hurt_player() {
   if (player.lives <= 0) player.alive = false;
   else {
     if (g_diff !== DIF_HARD && score - last_death_score < 800)
-      player.shield = g_diff === DIF_EASY ? 360 : 240;
+      player.shield = g_diff === DIF_EASY ? 140 : 100;
     last_death_score = score;
   }
 }
@@ -1522,6 +1943,8 @@ function kill_enemy(e) {
   if (player.combo > player.max_combo) player.max_combo = player.combo;
   const tier_up = combo_mult() > old_mult;
   score_add(enemy_score(e) * combo_mult());
+  if (tier_up) spawn_popup(cx - 8, cy - 10, 'X' + combo_mult());               /* combo milestone */
+  else if (e.elite) spawn_popup(cx - 12, cy - 10, String(enemy_score(e) * combo_mult()));  /* bounty */
   if (!risk_spawned && player.combo >= 10) {
     drop_powerup(rrange(96, 212), rrange(38, 72), PU_SCORE);
     risk_spawned = 1;
@@ -1529,18 +1952,28 @@ function kill_enemy(e) {
   const drop_chance = g_diff === DIF_EASY ? 18 : g_diff === DIF_HARD ? 12 : 15;
   if (rnd() % 100 < drop_chance) {
     const r = rnd() % 100;
-    const t = r < 16 ? PU_GUN : r < 30 ? PU_RAPID : r < 44 ? PU_SHIELD
-            : r < 64 ? PU_MISSILE : r < 76 ? PU_LASER : r < 88 ? PU_WAVE
-            : r < 95 ? PU_BOMB : PU_LIFE;
+    const t = r < 18 ? PU_GUN : r < 32 ? PU_RAPID : r < 46 ? PU_SHIELD
+            : r < 66 ? PU_MISSILE : r < 78 ? PU_LASER : r < 90 ? PU_WAVE
+            : r < 97 ? PU_BOMB : PU_LIFE;
     drop_powerup(cx - (SH_PU_W>>1), cy, t);
   }
   e.active = false;
   snd_sfx(tier_up ? SFX_COMBO : SFX_EXPLODE);
 }
+/* stage 1: start the chained death sequence (boss goes inert + invulnerable) */
 function boss_die() {
+  if (boss.die_t > 0) return;
+  boss.hp = 0;
+  boss.die_t = 45;
+  boss.charge = 0;
+  snd_sfx(SFX_EXPLODE);
+}
+/* stage 2: the final blast once the chained explosions finish */
+function boss_finish_death() {
   fireburst(boss.x + (boss.w>>1), boss.y + (boss.h>>1), 60);
   spawn_blast(boss.x + (boss.w>>1), boss.y + (boss.h>>1), 3);
   score_add(5000 * combo_mult());
+  spawn_popup(boss.x + (boss.w>>1) - 20, boss.y, '+5000');
   flash = 8; shk = 24;
   bosses_defeated++;
   force_powerup(boss.x + 10, boss.y + 10, PU_LIFE);
@@ -1563,7 +1996,7 @@ function missile_boom(mx, my) {
     if (e.hp <= 0) kill_enemy(e);
   }
   if (boss.active && overlap(mx-26, my-26, 52, 52, boss.x, boss.y, boss.w, boss.h)) {
-    apply_boss_damage(boss_pct_damage(10));
+    apply_boss_damage(boss_pct_damage(12));
   }
   snd_sfx(SFX_EXPLODE);
 }
@@ -1727,8 +2160,27 @@ function update_play() {
     }
   }
 
+  /* enemy separation: dissolve stacked ships (every other frame) */
+  if (frame & 1) separate_enemies();
+
+  /* popups */
+  for (const p of popup) if (p.active) {
+    if (p.t & 1) p.y--;
+    if (--p.t <= 0) p.active = false;
+  }
+
   /* boss */
-  if (boss.active) {
+  if (boss.active && boss.warn > 0) {
+    boss.warn--;                            /* hold the entrance for the WARNING */
+  } else if (boss.active && boss.die_t > 0) {
+    /* staged death: inert + invulnerable, chained explosions ripple through */
+    boss.die_t--;
+    if (boss.die_t % 6 === 0)
+      fireburst(boss.x + 4 + rnd() % (boss.w - 8), boss.y + 2 + rnd() % (boss.h - 4), 10);
+    if (boss.die_t % 9 === 0) snd_sfx(SFX_EXPLODE);
+    if (shk < 3) shk = 3;
+    if (boss.die_t === 0) boss_finish_death();
+  } else if (boss.active) {
     if (boss.entering) {
       const ry = boss_rest_y();
       boss.y += 3;
@@ -1740,6 +2192,7 @@ function update_play() {
     }
     boss.t++;
     if (boss.charge > 0) boss.charge--;
+    if (boss.hurt_t > 0) boss.hurt_t--;
     if (--boss.atk_t <= 0) {
       boss.atk = (boss.atk + 1) % boss_attack_count();
       boss.atk_t = boss_atk_time();
@@ -1754,15 +2207,18 @@ function update_play() {
         boss.summons |= 1 << boss.phase;
         summon_escort();
       }
+      if (boss.kind === 8) boss.ty = 1;               /* KRAKEN: recoil to the top */
+      if (boss.kind === 14) { boss.ty = 0; boss.mv_t = 90; }  /* OVERLORD: new language */
     }
     for (const b of pbul) if (b.active &&
         overlap(b.x, b.y, SH_PB_W, SH_PB_H, boss.x+2, boss.y, boss.w-4, boss.h)) {
       if (b.kind !== WT_LASER) b.active = false;
       burst(b.x, b.y, 2, C_WHITE, C_YELLOW);
       boss.hp -= b.dmg;
+      boss.hurt_t = 2;
       if (boss.hp <= 0) { boss_die(); break; }
     }
-    if (boss.active && player.alive && player.invuln === 0 &&
+    if (boss.active && boss.die_t === 0 && player.alive && player.invuln === 0 &&
         overlap(boss.x+2, boss.y, boss.w-4, boss.h, player.x+3, player.y+3, SH_SHIP_W-6, SH_SHIP_H-6))
       hurt_player();
   }
@@ -1835,7 +2291,8 @@ function draw_hud() {
     if (bw > 0) vga_rect(211, 191, bw, 4, bc);
   }
   if (player.rapid > 0) text_draw(252, 190, 'R', C_YELLOW);
-  if (player.shield > 0) text_draw(268, 190, 'S', C_LBLUE);
+  if (player.shield > 0)                    /* red once it's about to expire */
+    text_draw(268, 190, 'S', player.shield < 70 ? C_LRED : C_LBLUE);
   if (boss.active && !boss.entering) {
     const w = Math.floor(boss.hp * 200 / boss.maxhp);
     const c = boss.phase >= 2 ? C_LRED : boss.phase >= 1 ? C_YELLOW : C_LGREEN;
@@ -1866,6 +2323,107 @@ function draw_elite_overlay(e) {
   const c = frame & 4 ? C_WHITE : C_LCYAN;
   vga_frame(e.x-1+shx, e.y-1+shy, SH_EN_W+2, SH_EN_H+2, c);
 }
+/* boss drawn through a shifting checkerboard: reads as dematerialising */
+function draw_boss_masked() {
+  const s = spr_boss[boss.spr];
+  for (let y = 0; y < boss.h; y++)
+    for (let x = 0; x < boss.w; x++) {
+      const c = s[y * boss.w + x];
+      if (!c) continue;
+      if (((x ^ y) ^ (frame >> 1)) & 1) continue;
+      vga_pixel(boss.x + x + shx, boss.y + y + shy, c);
+    }
+}
+/* per-boss animated overlays: the "alive" layer on top of the static bitmap */
+function draw_boss_extras(cx, cy) {
+  switch (boss.kind) {
+  case 3: case 12: {                        /* SEEKER / BASILISK: pupil tracks you */
+    const ex = cx, ey = boss.kind === 3 ? cy : boss.y + 13 + shy;
+    const dx = clamp(Math.trunc((player.x + 8 - (boss.x + (boss.w>>1))) / 24), -2, 2);
+    const dy = clamp(Math.trunc((player.y + 8 - (boss.y + (boss.h>>1))) / 40), -2, 2);
+    if (boss.kind === 12 && boss.ty === 1) {          /* eyelid shuts: guillotine tell */
+      vga_hline(ex - 6, ey, 12, C_GREEN);
+      vga_hline(ex - 6, ey - 1, 12, C_GREEN);
+    } else {
+      vga_rect(ex + dx - 1, ey + dy - 1, 2, 2, C_WHITE);
+    }
+    break; }
+  case 4:                                   /* MANTIS: claw tips spark when lunging */
+    if (boss.ty === 2) {
+      const c = frame & 2 ? C_WHITE : C_YELLOW;
+      vga_pixel(boss.x + 21 + shx, boss.y + 14 + shy, c);
+      vga_pixel(boss.x + boss.w - 22 + shx, boss.y + 14 + shy, c);
+    }
+    break;
+  case 5:                                   /* ANVIL: pistons extend during the crush */
+    if (boss.ty === 2 || boss.ty === 3) {
+      for (let k = 10; k <= boss.w - 12; k += 12) {
+        vga_hline(boss.x + k + shx, boss.y - 3 + shy, 2, C_LGRAY);
+        vga_hline(boss.x + k + shx, boss.y - 6 + shy, 2, C_DGRAY);
+      }
+    }
+    break;
+  case 7:                                   /* NEXUS: tethered orbiting fire-pods */
+    for (let k = 0; k < 2; k++) {
+      const tx = boss.px[k], ty = boss.py[k];
+      for (let s = 1; s < 5; s++)           /* glow tether, core -> pod */
+        vga_pixel(cx + Math.trunc((tx + shx - cx) * s / 5),
+                  cy + Math.trunc((ty + shy - cy) * s / 5),
+                  PAL_GLOW + 5 + s * 2);
+      DS(tx - (SH_POD_W>>1), ty - (SH_POD_H>>1), SH_POD_W, SH_POD_H, spr_bosspod);
+    }
+    break;
+  case 8:                                   /* KRAKEN: five writhing tentacles */
+    for (let k = 0; k < 5; k++) {
+      const ax = boss.x + 8 + k * 12 + shx;
+      const ay = boss.y + boss.h - 2 + shy;
+      for (let s = 0; s < 8; s++) {
+        const px = ax + Math.trunc(sintab[(frame * 3 + k * 13 + s * 8) & 63] * s / 40);
+        const py = ay + s * 3;
+        const c = s < 5 ? C_GREEN : C_LGREEN;
+        vga_pixel(px, py, c);
+        vga_pixel(px + 1, py, c);
+      }
+    }
+    break;
+  case 10:                                  /* CITADEL: muzzle flash on the live turret */
+    if (boss.firecd < 5) {
+      const tx = player.x + 8 > boss.x + (boss.w>>1) ? boss.w - 20 : 8;
+      vga_rect(boss.x + tx + 4 + shx, boss.y + 17 + shy, 3, 2, frame & 1 ? C_WHITE : C_YELLOW);
+    }
+    break;
+  case 11:                                  /* VORTEX: eight orbiting singularity orbs */
+    for (let k = 0; k < 8; k++) {
+      const a = (boss.spin + k * 8) & 63;
+      const ox = cx + Math.trunc(sintab[a] * 24 / 46);
+      const oy = cy + Math.trunc(sintab[(a + 16) & 63] * 18 / 46);
+      vga_rect(ox - 1, oy - 1, 2, 2, k & 1 ? C_LMAG : C_LCYAN);
+    }
+    break;
+  case 13:                                  /* TITAN: armour cracks open per phase */
+    if (boss.phase >= 1) {
+      vga_rect(boss.x + 12 + shx, boss.y + 16 + shy, 8, 6, C_BLACK);
+      vga_rect(boss.x + 14 + shx, boss.y + 18 + shy, 4, 2, PAL_FIRE + 6 + ((frame >> 1) & 3));
+    }
+    if (boss.phase >= 2) {
+      vga_rect(boss.x + boss.w - 24 + shx, boss.y + 28 + shy, 10, 6, C_BLACK);
+      vga_rect(boss.x + boss.w - 21 + shx, boss.y + 30 + shy, 4, 2, PAL_FIRE + 8 + ((frame >> 1) & 3));
+      vga_rect(boss.x + 30 + shx, boss.y + 6 + shy, 6, 4, C_BLACK);
+    }
+    break;
+  case 14:                                  /* OVERLORD: rotating crown spokes + aura */
+    for (let k = 0; k < 4; k++) {
+      const a = (boss.spin + k * 16) & 63;
+      for (let s = 3; s < 6; s++)
+        vga_pixel(cx + Math.trunc(sintab[a] * s * 6 / 46),
+                  cy + Math.trunc(sintab[(a + 16) & 63] * s * 5 / 46),
+                  s === 5 ? C_WHITE : C_LMAG);
+    }
+    if (boss.phase >= 2 && (frame & 2))
+      vga_frame(boss.x - 3 + shx, boss.y - 3 + shy, boss.w + 6, boss.h + 6, C_LRED);
+    break;
+  }
+}
 function draw_play() {
   for (const p of part) if (p.active) {
     const c = part_col(p);
@@ -1885,28 +2443,41 @@ function draw_play() {
     DS(e.x, e.y, SH_EN_W, SH_EN_H, spr_enemy[e.type]);
     draw_elite_overlay(e);
   }
-  if (boss.active) {
+  if (boss.active && boss.warn === 0) {
     const cx = boss.x + (boss.w>>1) + shx, cy = boss.y + (boss.h>>1) + shy;
-    DS(boss.x, boss.y, boss.w, boss.h, spr_boss[boss.spr]);
-    if (boss.phase >= 1) {                    /* battle damage, scaled to footprint */
-      vga_hline(cx - ((boss.w/3)|0), cy - ((boss.h/6)|0), (2*boss.w/3)|0, C_DGRAY);
-      vga_hline(cx - ((boss.w/4)|0), cy + ((boss.h/4)|0), (boss.w/2)|0, C_DGRAY);
+    const teleporting = (boss.kind === 9 && (boss.ty === 1 || boss.ty === 2) && !boss.entering)
+                     || (boss.kind === 14 && boss.phase === 1
+                         && (boss.ty === 1 || boss.ty === 2) && !boss.entering);
+    if (teleporting) draw_boss_masked();    /* dematerialising checkerboard */
+    else if (boss.die_t > 0) {              /* dying: flickering, breaking apart */
+      if (boss.die_t & 2) DS(boss.x, boss.y, boss.w, boss.h, spr_boss[boss.spr]);
+      else draw_boss_masked();
+    } else DS(boss.x, boss.y, boss.w, boss.h, spr_boss[boss.spr]);
+    draw_boss_extras(cx, cy);               /* per-boss animated overlays */
+    if (boss.die_t === 0) {
+      if (boss.phase >= 1 && boss.kind !== 13) {   /* scorch (TITAN has armour-break) */
+        vga_hline(cx - ((boss.w/3)|0), cy - ((boss.h/6)|0), (2*boss.w/3)|0, C_DGRAY);
+        vga_hline(cx - ((boss.w/4)|0), cy + ((boss.h/4)|0), (boss.w/2)|0, C_DGRAY);
+      }
+      if (boss.phase >= 2 && boss.kind !== 13) {
+        vga_frame(cx - 9, cy - 6, 18, 12, C_LRED);
+        vga_pixel(cx - ((boss.w/3)|0), cy, C_YELLOW);
+        vga_pixel(cx + ((boss.w/3)|0), cy, C_YELLOW);
+      }
+      if (boss.hurt_t > 0)                  /* white hit flash */
+        vga_frame(boss.x-1+shx, boss.y-1+shy, boss.w+2, boss.h+2, C_WHITE);
+      if (boss.charge > 0)
+        vga_frame(boss.x-2+shx, boss.y-2+shy, boss.w+4, boss.h+4, boss.charge & 2 ? C_WHITE : C_LRED);
+      vga_rect(cx - 3, cy - 3, 6, 6,
+               PAL_FIRE + 8 + ((frame >> (boss.phase >= 2 ? 0 : 1)) & 7));
     }
-    if (boss.phase >= 2) {
-      vga_frame(cx - 9, cy - 6, 18, 12, C_LRED);
-      vga_pixel(cx - ((boss.w/3)|0), cy, C_YELLOW);
-      vga_pixel(cx + ((boss.w/3)|0), cy, C_YELLOW);
-    }
-    if (boss.charge > 0)
-      vga_frame(boss.x-2+shx, boss.y-2+shy, boss.w+4, boss.h+4, boss.charge & 2 ? C_WHITE : C_LRED);
-    vga_rect(cx - 3, cy - 3, 6, 6,
-             PAL_FIRE + 8 + ((frame >> (boss.phase >= 2 ? 0 : 1)) & 7));
   }
   for (const m of mslA) if (m.active) DS(m.x, m.y, SH_MSL_W, SH_MSL_H, spr_missile);
   for (const b of ebul) if (b.active) DS(b.x, b.y, SH_EB_W, SH_EB_H, spr_ebullet);
   for (const b of pbul) if (b.active) DS(b.x, b.y, SH_PB_W, SH_PB_H, spr_pbullet[b.kind]);
   if (player.alive && !(player.invuln > 0 && frame & 2)) {
-    if (player.shield > 0)
+    /* shield ring; blinks off intermittently during the last ~2 s */
+    if (player.shield > 0 && !(player.shield < 70 && (frame & 2)))
       vga_frame(player.x-2+shx, player.y-2+shy, SH_SHIP_W+4, SH_SHIP_H+4,
                 frame & 2 ? PAL_GLOW+14 : PAL_GLOW+8);
     DS(player.x, player.y, SH_SHIP_W, SH_SHIP_H, spr_ship[ship_bank]);
@@ -1920,8 +2491,16 @@ function draw_play() {
       vga_pixel(fx+3, fy+4, PAL_FIRE+6); vga_pixel(fx+12, fy+4, PAL_FIRE+6);
     }
   }
+  for (const p of popup) if (p.active)
+    text_draw(p.x + shx, p.y + shy, p.txt, p.t > 10 ? C_WHITE : C_LGRAY);
   draw_hud();
-  if (wave_banner > 0) {
+  if (boss.active && boss.warn > 0) {          /* klaxon intro before the entrance */
+    const bc = boss.warn & 8 ? C_LRED : C_RED;
+    vga_rect(0, 64, SCRW, 2, bc);
+    vga_rect(0, 100, SCRW, 2, bc);
+    if (boss.warn & 8) text_center(74, '! WARNING !', C_WHITE);
+    text_center(88, BOSSNAME[boss.kind], C_YELLOW);
+  } else if (wave_banner > 0) {
     if (boss.active) {
       text_center(76, BOSSNAME[boss.kind] + ' APPROACHING', boss.phase >= 2 ? C_LRED : C_YELLOW);
     } else {
@@ -1984,7 +2563,7 @@ function draw_help() {
     text_center(8, 'PICKUPS', C_YELLOW);
     help_row(24,  PU_GUN,     'GUN +1 LEVEL. -1 WHEN YOU DIE');
     help_row(40,  PU_RAPID,   'RAPID FIRE FOR A WHILE');
-    help_row(56,  PU_SHIELD,  'SHIELD: ABSORBS ONE HIT');
+    help_row(56,  PU_SHIELD,  'SHIELD: 10 SEC INVULNERABLE');
     help_row(72,  PU_LIFE,    'EXTRA SHIP');
     help_row(88,  PU_MISSILE, '+4 MISSILES (MAX 30)');
     help_row(104, PU_LASER,   'LASER GUN: FAST, PIERCES');

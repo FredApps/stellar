@@ -16,8 +16,10 @@
 #define SH_PU_H   12
 #define SH_BOSS_W 48                 /* legacy default / title-screen draw only */
 #define SH_BOSS_H 34
-#define BOSS_MAXW 64                 /* max boss footprint; storage stride       */
-#define BOSS_MAXH 44
+#define BOSS_MAXW 72                 /* max boss footprint; storage stride       */
+#define BOSS_MAXH 52                 /* 15 x 72*52 = 56160 bytes: keep < 64 KB   */
+#define SH_POD_W  14                 /* NEXUS orbiting fire-pod                  */
+#define SH_POD_H  12
 #define SH_MSL_W   5
 #define SH_MSL_H  10
 
@@ -31,6 +33,7 @@ extern u8 spr_ebullet[SH_EB_W * SH_EB_H];
 extern u8 spr_powerup[PU_COUNT][SH_PU_W * SH_PU_H];
 extern u8 spr_boss[NBOSS][BOSS_MAXW * BOSS_MAXH];
 extern i16 spr_boss_w[NBOSS], spr_boss_h[NBOSS];
+extern u8 spr_bosspod[SH_POD_W * SH_POD_H];
 extern u8 spr_missile[SH_MSL_W * SH_MSL_H];
 
 void sprites_init(void);            /* build bitmaps + fetch ROM font */
