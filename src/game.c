@@ -2493,6 +2493,87 @@ static void draw_win(void)
 
 /* ---------------- instruction menu ---------------- */
 static i16 help_page = 0;
+#define HELP_PAGES 6
+
+typedef struct {
+    const char *text;
+    u8 col;
+} HelpLine;
+
+static const char *HELP_TITLE[HELP_PAGES] = {
+    "CONTROLS", "PICKUPS", "WEAPONS", "SURVIVAL",
+    "ENEMIES AND BOSSES", "SCORING AND DIFFICULTY"
+};
+
+static const HelpLine HELP_CONTROLS[] = {
+    { "ARROWS / WASD   MOVE SHIP", C_WHITE },
+    { "SPACE           FIRE", C_LGRAY },
+    { "SHIFT           BOOST", C_LGREEN },
+    { "CTRL            HOMING MISSILE", C_LCYAN },
+    { "B               SMART BOMB", C_LMAG },
+    { "P               PAUSE / RESUME", C_LGRAY },
+    { "M               MUTE / UNMUTE", C_LGRAY },
+    { "H               OPEN / CLOSE HELP", C_LGRAY },
+    { "ESC             BACK / TITLE", C_LGRAY },
+    { "HELP PAGES: USE UP / DOWN", C_YELLOW }
+};
+static const HelpLine HELP_WEAPONS[] = {
+    { "CANNON: BALANCED SPREAD", C_YELLOW },
+    { "LASER: PIERCING, 2 DAMAGE", C_LCYAN },
+    { "LEVELS 1-4 FIRE 1/2/3/4 LANES", C_LCYAN },
+    { "WAVE: WIDE CROWD CONTROL", C_LMAG },
+    { "LEVELS 1-4 FIRE 5/7/9/11 SHOTS", C_LMAG },
+    { "G UPGRADES EQUIPPED WEAPON", C_WHITE },
+    { "Z ON WAVE: 10 SEC PIERCE BOOST", C_WHITE },
+    { "R RAPID SHORTENS FIRE COOLDOWN", C_LGRAY },
+    { "MISSILES HOME AHEAD, BEST VS BOSS", C_LGRAY },
+    { "DEATH LOWERS GUN LEVEL BY ONE", C_DGRAY }
+};
+static const HelpLine HELP_SURVIVAL[] = {
+    { "BST DRAINS DURING BOOST", C_LGREEN },
+    { "RELEASE SHIFT; BST RECHARGES", C_LGREEN },
+    { "SHIELD: 10 SEC INVULNERABLE", C_LCYAN },
+    { "SHIELD RAM DESTROYS SMALL ENEMIES", C_LCYAN },
+    { "BOSS RAM: 10 PCT DAMAGE + BOUNCE", C_LCYAN },
+    { "SMART BOMB CLEARS ENEMY SHOTS", C_LMAG },
+    { "FLY ABOVE BOSS TO FIRE DOWN", C_WHITE },
+    { "BOSS FLASH = HEAVY ATTACK TELL", C_YELLOW },
+    { "EASY/NORMAL GIVE RECOVERY SHIELDS", C_DGRAY },
+    { "PICKUPS FAVOR RESOURCES YOU NEED", C_DGRAY }
+};
+static const HelpLine HELP_ENEMIES[] = {
+    { "SCOUT: FAST STRAIGHT ATTACKER", C_LGRAY },
+    { "WEAVER: SWERVES; ELITE TRAILS", C_LGRAY },
+    { "SHOOTER: FIRES; ELITE SPLITS", C_LGRAY },
+    { "BOX WARNS: TOUGH ELITE ENEMY", C_LCYAN },
+    { "STRONGER ATTACKS + BONUS SCORE", C_WHITE },
+    { "EVERY 4TH WAVE IS A BOSS", C_YELLOW },
+    { "GREEN + MARKS SUPPLY ESCORT", C_LGREEN },
+    { "SUPPLY ESCORT GUARANTEES DROP", C_LGREEN },
+    { "SUPPORT DROPS CAPPED AT 4 / BOSS", C_DGRAY },
+    { "BEAT W60 TO UNLOCK FREEPLAY", C_LMAG }
+};
+static const HelpLine HELP_SCORING[] = {
+    { "FAST KILLS BUILD COMBO TO X5", C_WHITE },
+    { "GRAZE SHOTS: +10 + COMBO TIME", C_LCYAN },
+    { "NO HIT / PERFECT WAVE MEDALS", C_YELLOW },
+    { "BOMBS SCORE FOR CLEARED SHOTS", C_LMAG },
+    { "$ GEM VALUE RISES WITH WAVE", C_WHITE },
+    { "EASY SCORE X1.00", C_LGREEN },
+    { "NORMAL SCORE X1.25", C_LCYAN },
+    { "HARD SCORE X1.60", C_LRED },
+    { "HARD: MORE + DENSER ATTACKS", C_LRED },
+    { "NORMAL DROPS E/N/H: 18/15/12 PCT", C_DGRAY },
+    { "ESCORT DROPS E/N/H: 55/50/45 PCT", C_LGREEN },
+    { "ALL MODES SHARE ONE HIGH SCORE", C_WHITE }
+};
+
+static void help_lines(const HelpLine *line, u8 count, i16 y, i16 step)
+{
+    u8 i;
+    for (i = 0; i < count; i++, y += step)
+        text_draw(20, y, line[i].text, line[i].col);
+}
 
 /* letter identifying each pickup gem (index = PU_* type) */
 static const char PU_LETTER[PU_COUNT + 1] = "GRHLMZWB$";
@@ -2500,43 +2581,72 @@ static const char PU_LETTER[PU_COUNT + 1] = "GRHLMZWB$";
 static void help_row(i16 y, u8 pu, const char *txt)
 {
     char s[2];
-    vga_sprite(40, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
+    vga_sprite(20, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
     s[0] = PU_LETTER[pu]; s[1] = 0;
-    text_draw(55, y + 3, s, C_BLACK);
-    text_draw(54, y + 2, s, C_WHITE);        /* separate high-contrast label */
-    text_draw(70, y + 2, txt, C_LGRAY);
+    text_draw(35, y + 3, s, C_BLACK);
+    text_draw(34, y + 2, s, C_WHITE);        /* separate high-contrast label */
+    text_draw(50, y + 2, txt, C_LGRAY);
+}
+
+static void help_arrow(i16 x, i16 y, bool up, u8 col)
+{
+    if (up) {
+        vga_pixel((i16)(x + 3), y, col);
+        vga_hline((i16)(x + 2), (i16)(y + 1), 3, col);
+        vga_hline((i16)(x + 1), (i16)(y + 2), 5, col);
+        vga_hline(x, (i16)(y + 3), 7, col);
+    } else {
+        vga_hline(x, y, 7, col);
+        vga_hline((i16)(x + 1), (i16)(y + 1), 5, col);
+        vga_hline((i16)(x + 2), (i16)(y + 2), 3, col);
+        vga_pixel((i16)(x + 3), (i16)(y + 3), col);
+    }
+}
+
+static void help_nav(void)
+{
+    char b[16];
+    u8 upc = (help_page > 0) ? C_LCYAN : C_DGRAY;
+    u8 dnc = (help_page < HELP_PAGES - 1) ? C_LCYAN : C_DGRAY;
+    help_arrow(14, 182, TRUE, upc);  text_draw(24, 180, "UP", upc);
+    help_arrow(62, 182, FALSE, dnc); text_draw(72, 180, "DOWN", dnc);
+    sprintf(b, "PAGE %d/%d", help_page + 1, HELP_PAGES);
+    text_center(180, b, C_LGRAY);
+    text_draw(240, 180, "ESC BACK", C_LCYAN);
+}
+
+static void help_scroll(i16 dir)
+{
+    help_page += dir;
+    if (help_page < 0) help_page = 0;
+    if (help_page >= HELP_PAGES) help_page = HELP_PAGES - 1;
 }
 
 static void draw_help(void)
 {
+    text_center(6, HELP_TITLE[help_page], C_YELLOW);
     if (help_page == 0) {
-        text_center(8, "PICKUPS", C_YELLOW);
-        help_row( 24, PU_GUN,     "GUN: +1 LEVEL (LOSE 1 ON DEATH)");
-        help_row( 40, PU_RAPID,   "RAPID: FASTER FIRE, TIMED");
-        help_row( 56, PU_SHIELD,  "SHIELD: 10 SEC INVULNERABLE");
-        help_row( 72, PU_LIFE,    "LIFE: EXTRA SHIP");
-        help_row( 88, PU_MISSILE, "MISSILES: +4 AMMO (MAX 30)");
-        help_row(104, PU_LASER,   "LASER: FAST PIERCING GUN");
-        help_row(120, PU_WAVE,    "WAVE: WIDE ARC GUN");
-        help_row(136, PU_BOMB,    "BOMB: +1 SMART BOMB (MAX 10)");
-        help_row(152, PU_SCORE,   "SCORE GEM: RISKY BONUS");
-        text_center(176, "SPACE NEXT PAGE   ESC BACK", C_LCYAN);
+        help_lines(HELP_CONTROLS, 10, 24, 14);
+    } else if (help_page == 1) {
+        help_row( 22, PU_GUN,     "GUN: +1 EQUIPPED WEAPON LEVEL");
+        help_row( 38, PU_RAPID,   "RAPID: FASTER FIRE, TIMED");
+        help_row( 54, PU_SHIELD,  "SHIELD: 10 SEC INVULNERABLE");
+        help_row( 70, PU_LIFE,    "LIFE: EXTRA SHIP (MAX 9)");
+        help_row( 86, PU_MISSILE, "MISSILES: +4 AMMO (MAX 30)");
+        help_row(102, PU_LASER,   "LASER: FAST PIERCING GUN");
+        help_row(118, PU_WAVE,    "WAVE: WIDE ARC GUN");
+        help_row(134, PU_BOMB,    "BOMB: +1 SMART BOMB (MAX 10)");
+        help_row(150, PU_SCORE,   "SCORE GEM: RISKY WAVE BONUS");
+    } else if (help_page == 2) {
+        help_lines(HELP_WEAPONS, 10, 24, 14);
+    } else if (help_page == 3) {
+        help_lines(HELP_SURVIVAL, 10, 24, 14);
+    } else if (help_page == 4) {
+        help_lines(HELP_ENEMIES, 10, 24, 14);
     } else {
-        text_center(8, "COMBAT MANUAL", C_YELLOW);
-        text_draw(20,  24, "G UPGRADES EQUIPPED WEAPON", C_LGRAY);
-        text_draw(20,  38, "LASER 1/2/3/4 = 1/2/3/4 BEAMS", C_LCYAN);
-        text_draw(20,  52, "WAVE  1/2/3/4 = 5/7/9/11 SHOTS", C_LMAG);
-        text_draw(20,  66, "WAVE + Z = 10 SEC PIERCE", C_WHITE);
-        vga_sprite(24, 82, SH_MSL_W, SH_MSL_H, spr_missile);
-        text_draw(36,  84, "CTRL MISSILE: BEST VS BOSSES", C_LGRAY);
-        text_draw(20, 100, "B BOMB: CLEAR SHOTS + DAMAGE", C_LGRAY);
-        text_draw(20, 116, "SHIFT BOOST: SPEED BURST", C_LGRAY);
-        text_draw(20, 128, "FAST KILLS COMBO UP TO X5", C_LGRAY);
-        text_draw(20, 142, "GRAZE SHOTS FOR BONUS POINTS", C_DGRAY);
-        text_draw(20, 156, "BOX WARNS: TOUGH ELITE ENEMY", C_LCYAN);
-        text_draw(20, 170, "STRONGER ATTACKS + BONUS SCORE", C_WHITE);
-        text_center(188, "SPACE PICKUPS   ESC BACK", C_LCYAN);
+        help_lines(HELP_SCORING, 12, 22, 13);
     }
+    help_nav();
 }
 
 static void draw_scores(void)
@@ -2595,7 +2705,12 @@ void game_run(void)
             if (key_hit(SC_ESC))   state = ST_QUIT;
             break;
         case ST_HELP:
-            if (key_hit(SC_SPACE)) help_page ^= 1;
+            if (key_hit(SC_UP) || key_hit(SC_W)) help_scroll(-1);
+            if (key_hit(SC_DOWN) || key_hit(SC_S)) help_scroll(1);
+            if (key_hit(SC_SPACE)) {
+                if (help_page < HELP_PAGES - 1) help_scroll(1);
+                else help_page = 0;
+            }
             if (key_hit(SC_ESC) || key_hit(SC_H)) state = ST_TITLE;
             break;
         case ST_PLAY:

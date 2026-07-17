@@ -14,8 +14,13 @@ native gameplay pacing of about 35 FPS.
 | B | Fire a smart bomb |
 | P | Pause / unpause |
 | M | Mute / unmute all sound |
-| Up/Down on title | Change difficulty |
+| H | Open / close Help from the title screen |
+| Up/Down | Change title difficulty; scroll Help pages |
 | Esc | PLAY -> title; TITLE -> quit; high-score entry -> save and replay |
+
+Help is a six-page manual for controls, pickups, weapons, survival, enemies and bosses, and scoring
+and difficulty. Enabled Up/Down arrows at the bottom show which direction can be scrolled; Space also
+advances to the next page. The browser port provides matching touch buttons outside the playfield.
 
 ## Objective
 

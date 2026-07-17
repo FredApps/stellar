@@ -75,6 +75,7 @@
   #mobileControls,
   #mobileLaunch,
   #rotateGate,
+  #helpControls,
   #entryControls,
   #victoryControls { display: none; }
 
@@ -136,6 +137,10 @@
     left: clamp(112px, 18vw, 160px);
     right: clamp(112px, 18vw, 160px);
   }
+  body.mobile-ui.help-mode:not(.portrait-blocked):not(.mobile-launch) #wrap {
+    left: 112px;
+    right: 112px;
+  }
   body.mobile-ui.victory-mode:not(.portrait-blocked) #wrap {
     left: clamp(148px, 19vw, 168px);
     right: clamp(148px, 19vw, 168px);
@@ -187,6 +192,15 @@
     font-size: 15px;
     font-weight: bold;
   }
+  body.mobile-ui.help-mode:not(.portrait-blocked):not(.mobile-launch) #helpControls { display: block; }
+  #helpControls { position: fixed; inset: 0; z-index: 18; pointer-events: none; }
+  #helpControls button {
+    position: absolute; width: 88px; min-height: 40px; padding: 0 6px;
+    font-size: 11px; pointer-events: auto;
+  }
+  #helpUp { left: calc(var(--safe-left) + 12px); top: 26%; }
+  #helpDown { left: calc(var(--safe-left) + 12px); bottom: 22%; }
+  #helpBack { right: calc(var(--safe-right) + 12px); bottom: calc(var(--safe-bottom) + 12px); }
 
   #nameInput {
     display: none;
@@ -229,6 +243,7 @@
   @media (orientation: portrait) {
     #continueWindowed,
     body.mobile-ui #mobileControls,
+    body.mobile-ui #helpControls,
     body.mobile-ui #entryControls,
     body.mobile-ui #victoryControls { display: none !important; }
     body.mobile-ui #nameInput { bottom: 18%; }
@@ -238,6 +253,7 @@
     #rightControls { gap: 4px; width: clamp(88px, 14vw, 108px); }
     #rightControls .compact-action { min-height: 28px; font-size: 9px; }
     #boostButton { min-height: 52px; font-size: 12px; }
+    #helpControls button { width: 84px; min-height: 34px; font-size: 9px; }
     .mobile-panel { padding: 12px; }
     .mobile-panel h1, .mobile-panel h2 { margin-bottom: 5px; font-size: 18px; }
     .mobile-panel p { margin: 3px 0; font-size: 10px; }
@@ -298,6 +314,12 @@
   </div>
 </div>
 
+<div id="helpControls" aria-label="Help navigation controls">
+  <button id="helpUp" data-tap="UP" aria-label="Previous help page">&#9650; UP</button>
+  <button id="helpDown" data-tap="DOWN" aria-label="Next help page">&#9660; DOWN</button>
+  <button id="helpBack" data-tap="H">BACK</button>
+</div>
+
 <div id="entryControls" aria-label="High score entry controls">
   <button data-entry="BKSP">BKSP</button>
   <button class="primary" data-entry="ENTER">ENTER</button>
@@ -307,6 +329,6 @@
   <button data-action="save-title">SAVE &amp; TITLE</button>
 </div>
 <input id="nameInput" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" enterkeyhint="done" inputmode="text" aria-label="High score name">
-<script src="shooter.js?v=20260717-1"></script>
+<script src="shooter.js?v=20260717-2"></script>
 </body>
 </html>

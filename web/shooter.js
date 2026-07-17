@@ -970,6 +970,7 @@ let risk_spawned = 0, bosses_defeated = 0, last_wave = 0, last_combo = 0, last_b
 let ship_bank = 1;
 let campaign_won = 0, win_pending = 0, win_t = 0;
 let state = ST_TITLE, paused = false, mobileOrientationSuspended = false;
+const HELP_PAGES = 6;
 let entry_rank = -1, entry_name = '', over_timer = 0, help_page = 0;
 let entrySubmitted = false, entryNameError = false, entryReplay = false, uiState = null;
 let pilotName = '';
@@ -2744,40 +2745,105 @@ function draw_win() {
   else text_center(152,'VICTORY',C_LMAG);
 }
 function help_row(y, pu, txt) {
-  vga_sprite(40, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
-  text_draw(55, y+3, 'GRHLMZWB$'[pu], C_BLACK);
-  text_draw(54, y+2, 'GRHLMZWB$'[pu], C_WHITE);
-  text_draw(70, y+2, txt, C_LGRAY);
+  vga_sprite(20, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
+  text_draw(35, y+3, 'GRHLMZWB$'[pu], C_BLACK);
+  text_draw(34, y+2, 'GRHLMZWB$'[pu], C_WHITE);
+  text_draw(50, y+2, txt, C_LGRAY);
 }
+function help_arrow(x, y, up, col) {
+  if (up) {
+    vga_pixel(x+3, y, col); vga_hline(x+2, y+1, 3, col);
+    vga_hline(x+1, y+2, 5, col); vga_hline(x, y+3, 7, col);
+  } else {
+    vga_hline(x, y, 7, col); vga_hline(x+1, y+1, 5, col);
+    vga_hline(x+2, y+2, 3, col); vga_pixel(x+3, y+3, col);
+  }
+}
+function help_nav() {
+  const upc = help_page > 0 ? C_LCYAN : C_DGRAY;
+  const dnc = help_page < HELP_PAGES-1 ? C_LCYAN : C_DGRAY;
+  help_arrow(14, 182, true, upc); text_draw(24, 180, 'UP', upc);
+  help_arrow(62, 182, false, dnc); text_draw(72, 180, 'DOWN', dnc);
+  text_center(180, 'PAGE ' + (help_page+1) + '/' + HELP_PAGES, C_LGRAY);
+  text_draw(240, 180, 'ESC BACK', C_LCYAN);
+}
+function help_scroll(dir) { help_page = Math.max(0, Math.min(HELP_PAGES-1, help_page + dir)); }
 function draw_help() {
   if (help_page === 0) {
-    text_center(8, 'PICKUPS', C_YELLOW);
-    help_row(24,  PU_GUN,     'GUN +1 LEVEL. -1 WHEN YOU DIE');
-    help_row(40,  PU_RAPID,   'RAPID FIRE FOR A WHILE');
-    help_row(56,  PU_SHIELD,  'SHIELD: 10 SEC INVULNERABLE');
-    help_row(72,  PU_LIFE,    'EXTRA SHIP');
-    help_row(88,  PU_MISSILE, '+4 MISSILES (MAX 30)');
-    help_row(104, PU_LASER,   'LASER GUN: FAST, PIERCES');
-    help_row(120, PU_WAVE,    'WAVE GUN: WIDE ARC');
-    help_row(136, PU_BOMB,    '+1 SMART BOMB (MAX 10)');
-    help_row(152, PU_SCORE,   'SCORE GEM: RISKY BONUS');
-    text_center(176, 'SPACE NEXT PAGE   ESC BACK', C_LCYAN);
+    text_center(6, 'CONTROLS', C_YELLOW);
+    text_draw(28, 24,  'ARROWS / WASD   MOVE SHIP', C_WHITE);
+    text_draw(28, 38,  'SPACE           FIRE', C_LGRAY);
+    text_draw(28, 52,  'SHIFT           BOOST', C_LGREEN);
+    text_draw(28, 66,  'CTRL            HOMING MISSILE', C_LCYAN);
+    text_draw(28, 80,  'B               SMART BOMB', C_LMAG);
+    text_draw(28, 94,  'P               PAUSE / RESUME', C_LGRAY);
+    text_draw(28, 108, 'M               MUSIC TOGGLE', C_LGRAY);
+    text_draw(28, 122, 'H               OPEN / CLOSE HELP', C_LGRAY);
+    text_draw(28, 136, 'ESC             BACK / TITLE', C_LGRAY);
+    text_draw(28, 154, 'HELP PAGES: USE UP / DOWN', C_YELLOW);
+  } else if (help_page === 1) {
+    text_center(6, 'PICKUPS', C_YELLOW);
+    help_row(22,  PU_GUN,     'GUN: +1 EQUIPPED WEAPON LEVEL');
+    help_row(38,  PU_RAPID,   'RAPID: FASTER FIRE, TIMED');
+    help_row(54,  PU_SHIELD,  'SHIELD: 10 SEC INVULNERABLE');
+    help_row(70,  PU_LIFE,    'LIFE: EXTRA SHIP (MAX 9)');
+    help_row(86,  PU_MISSILE, 'MISSILES: +4 AMMO (MAX 30)');
+    help_row(102, PU_LASER,   'LASER: FAST PIERCING GUN');
+    help_row(118, PU_WAVE,    'WAVE: WIDE ARC GUN');
+    help_row(134, PU_BOMB,    'BOMB: +1 SMART BOMB (MAX 10)');
+    help_row(150, PU_SCORE,   'SCORE GEM: RISKY WAVE BONUS');
+  } else if (help_page === 2) {
+    text_center(6, 'WEAPONS', C_YELLOW);
+    text_draw(20, 24,  'CANNON: BALANCED SPREAD', C_YELLOW);
+    text_draw(20, 38,  'LASER: PIERCING, 2 DAMAGE', C_LCYAN);
+    text_draw(20, 52,  'LEVELS 1-4 FIRE 1/2/3/4 LANES', C_LCYAN);
+    text_draw(20, 66,  'WAVE: WIDE CROWD CONTROL', C_LMAG);
+    text_draw(20, 80,  'LEVELS 1-4 FIRE 5/7/9/11 SHOTS', C_LMAG);
+    text_draw(20, 94,  'G UPGRADES EQUIPPED WEAPON', C_WHITE);
+    text_draw(20, 108, 'Z ON WAVE: 10 SEC PIERCE BOOST', C_WHITE);
+    text_draw(20, 122, 'R RAPID SHORTENS FIRE COOLDOWN', C_LGRAY);
+    text_draw(20, 136, 'MISSILES HOME AHEAD, BEST VS BOSS', C_LGRAY);
+    text_draw(20, 150, 'DEATH LOWERS GUN LEVEL BY ONE', C_DGRAY);
+  } else if (help_page === 3) {
+    text_center(6, 'SURVIVAL', C_YELLOW);
+    text_draw(20, 24,  'BST DRAINS DURING BOOST', C_LGREEN);
+    text_draw(20, 38,  'RELEASE SHIFT; BST RECHARGES', C_LGREEN);
+    text_draw(20, 52,  'SHIELD: 10 SEC INVULNERABLE', C_LCYAN);
+    text_draw(20, 66,  'SHIELD RAM DESTROYS SMALL ENEMIES', C_LCYAN);
+    text_draw(20, 80,  'BOSS RAM: 10 PCT DAMAGE + BOUNCE', C_LCYAN);
+    text_draw(20, 94,  'SMART BOMB CLEARS ENEMY SHOTS', C_LMAG);
+    text_draw(20, 108, 'FLY ABOVE BOSS TO FIRE DOWN', C_WHITE);
+    text_draw(20, 122, 'BOSS FLASH = HEAVY ATTACK TELL', C_YELLOW);
+    text_draw(20, 136, 'EASY/NORMAL GIVE RECOVERY SHIELDS', C_DGRAY);
+    text_draw(20, 150, 'PICKUPS FAVOR RESOURCES YOU NEED', C_DGRAY);
+  } else if (help_page === 4) {
+    text_center(6, 'ENEMIES AND BOSSES', C_YELLOW);
+    text_draw(20, 24,  'SCOUT: FAST STRAIGHT ATTACKER', C_LGRAY);
+    text_draw(20, 38,  'WEAVER: SWERVES; ELITE TRAILS', C_LGRAY);
+    text_draw(20, 52,  'SHOOTER: FIRES; ELITE SPLITS', C_LGRAY);
+    text_draw(20, 66,  'BOX WARNS: TOUGH ELITE ENEMY', C_LCYAN);
+    text_draw(20, 80,  'STRONGER ATTACKS + BONUS SCORE', C_WHITE);
+    text_draw(20, 94,  'EVERY 4TH WAVE IS A BOSS', C_YELLOW);
+    text_draw(20, 108, 'GREEN + MARKS SUPPLY ESCORT', C_LGREEN);
+    text_draw(20, 122, 'SUPPLY ESCORT GUARANTEES DROP', C_LGREEN);
+    text_draw(20, 136, 'SUPPORT DROPS CAPPED AT 4 / BOSS', C_DGRAY);
+    text_draw(20, 150, 'BEAT W60 TO UNLOCK FREEPLAY', C_LMAG);
   } else {
-    text_center(8, 'COMBAT MANUAL', C_YELLOW);
-    text_draw(20, 24,  'G UPGRADES EQUIPPED WEAPON', C_LGRAY);
-    text_draw(20, 38,  'LASER 1/2/3/4 = 1/2/3/4 BEAMS', C_LCYAN);
-    text_draw(20, 52,  'WAVE  1/2/3/4 = 5/7/9/11 SHOTS', C_LMAG);
-    text_draw(20, 66,  'WAVE + Z = 10 SEC PIERCE', C_WHITE);
-    vga_sprite(24, 82, SH_MSL_W, SH_MSL_H, spr_missile);
-    text_draw(36, 84,  'CTRL MISSILE: BEST VS BOSSES', C_LGRAY);
-    text_draw(20, 100, 'B BOMB: CLEAR SHOTS + DAMAGE', C_LGRAY);
-    text_draw(20, 116, 'SHIFT BOOST: SPEED BURST', C_LGRAY);
-    text_draw(20, 128, 'FAST KILLS COMBO UP TO X5', C_LGRAY);
-    text_draw(20, 142, 'GRAZE SHOTS FOR BONUS POINTS', C_DGRAY);
-    text_draw(20, 156, 'BOX WARNS: TOUGH ELITE ENEMY', C_LCYAN);
-    text_draw(20, 170, 'STRONGER ATTACKS + BONUS SCORE', C_WHITE);
-    text_center(188, 'SPACE PICKUPS   ESC BACK', C_LCYAN);
+    text_center(6, 'SCORING AND DIFFICULTY', C_YELLOW);
+    text_draw(20, 22,  'FAST KILLS BUILD COMBO TO X5', C_WHITE);
+    text_draw(20, 35,  'GRAZE SHOTS: +10 + COMBO TIME', C_LCYAN);
+    text_draw(20, 48,  'NO HIT / PERFECT WAVE MEDALS', C_YELLOW);
+    text_draw(20, 61,  'BOMBS SCORE FOR CLEARED SHOTS', C_LMAG);
+    text_draw(20, 74,  '$ GEM VALUE RISES WITH WAVE', C_WHITE);
+    text_draw(20, 87,  'EASY SCORE X1.00', C_LGREEN);
+    text_draw(20, 100, 'NORMAL SCORE X1.25', C_LCYAN);
+    text_draw(20, 113, 'HARD SCORE X1.60', C_LRED);
+    text_draw(20, 126, 'HARD: MORE + DENSER ATTACKS', C_LRED);
+    text_draw(20, 139, 'NORMAL DROPS E/N/H: 18/15/12 PCT', C_DGRAY);
+    text_draw(20, 152, 'ESCORT DROPS E/N/H: 55/50/45 PCT', C_LGREEN);
+    text_draw(20, 165, 'ALL MODES SHARE ONE HIGH SCORE', C_WHITE);
   }
+  help_nav();
 }
 function draw_scores() {
   text_center(16, 'HIGH SCORES', C_YELLOW);
@@ -2831,6 +2897,7 @@ function syncHtmlUi(forceFocus) {
   }
   document.body.classList.toggle('entry-mode', entering);
   document.body.classList.toggle('victory-mode', winning);
+  document.body.classList.toggle('help-mode', state === ST_HELP);
   document.body.classList.toggle('mobile-ui', mobileMode);
   document.body.classList.toggle('playing', playing);
   document.body.classList.toggle('paused', playing && paused);
@@ -2909,7 +2976,9 @@ function step() {
     if (key_hit('SPACE')) begin_run();
     break;
   case ST_HELP:
-    if (key_hit('SPACE')) help_page ^= 1;
+    if (key_hit('UP')) help_scroll(-1);
+    if (key_hit('DOWN')) help_scroll(1);
+    if (key_hit('SPACE')) help_page = help_page < HELP_PAGES-1 ? help_page+1 : 0;
     if (key_hit('ESC') || key_hit('H')) state = ST_TITLE;
     break;
   case ST_PLAY:

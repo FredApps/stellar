@@ -101,6 +101,10 @@ int main(int argc, char **argv)
         game_selftest("FRAME.BMP");
         game_selftest_help("HELP1.BMP", 0);
         game_selftest_help("HELP2.BMP", 1);
+        game_selftest_help("HELP3.BMP", 2);
+        game_selftest_help("HELP4.BMP", 3);
+        game_selftest_help("HELP5.BMP", 4);
+        game_selftest_help("HELP6.BMP", 5);
         game_selftest_stages("STAGES.BMP");
         game_selftest_bosses("BOSSES1.BMP", 0);
         game_selftest_bosses("BOSSES2.BMP", 1);

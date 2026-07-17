@@ -26,8 +26,11 @@ CONTROLS
   P ............. pause
   M ............. mute / unmute sound
   H ............. instruction menu (on title screen)
-  Up/Down ....... change difficulty on title screen
+  Up/Down ....... title difficulty / scroll help pages
   Esc ........... return to title / quit
+
+  Help has six pages. Follow the enabled Up/Down arrows at the bottom;
+  Space also advances to the next page.
 
   High-score names are remembered for this session. Empty names are not saved.
   In high-score entry, Esc saves quickly and starts another run.

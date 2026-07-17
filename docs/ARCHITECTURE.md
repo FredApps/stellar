@@ -106,7 +106,7 @@ TITLE -> PLAY -> OVER -> ENTRY/SCORES -> TITLE
 
 Hidden command-line modes:
 
-- `/shot` renders `TITLE.BMP`, `FRAME.BMP`, `HELP1/2.BMP`, `STAGES.BMP`, and the
+- `/shot` renders `TITLE.BMP`, `FRAME.BMP`, `HELP1.BMP` through `HELP6.BMP`, `STAGES.BMP`, and the
   boss roster atlases `BOSSES1.BMP`/`BOSSES2.BMP`, then runs headless logic
   checks (enemy separation + all boss movement envelopes) into `SELFTEST.TXT`.
 - `/audiodump` writes speaker frequencies to `AUDIO.TXT`.

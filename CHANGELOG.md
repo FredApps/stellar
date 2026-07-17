@@ -19,6 +19,8 @@ matching section in this file.
   boxed elites are tougher, use stronger attacks, and award bonus score.
 - Restored ordinary-enemy upgrade drops to Easy 18%, Normal 15%, and Hard 12%; increased drop odds
   remain exclusive to support escorts spawned during boss battles.
+- Expanded Help into six readable pages covering controls, pickups, weapons, survival, enemies,
+  bosses, scoring, and difficulty; Up/Down arrows and mobile side controls scroll the manual.
 
 ## v0.1.3 - 2026-07-10
 
