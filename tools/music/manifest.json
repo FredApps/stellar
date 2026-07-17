@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "score_hz": 35,
+  "tracks": [
+    {
+      "index": 0,
+      "name": "TITLE",
+      "ticks": 360,
+      "events": 226
+    },
+    {
+      "index": 1,
+      "name": "01 GORGON",
+      "ticks": 343,
+      "events": 170
+    },
+    {
+      "index": 2,
+      "name": "02 REAPER",
+      "ticks": 317,
+      "events": 276
+    },
+    {
+      "index": 3,
+      "name": "03 LEVIATHAN",
+      "ticks": 420,
+      "events": 204
+    },
+    {
+      "index": 4,
+      "name": "04 SEEKER",
+      "ticks": 276,
+      "events": 200
+    },
+    {
+      "index": 5,
+      "name": "05 MANTIS",
+      "ticks": 276,
+      "events": 250
+    },
+    {
+      "index": 6,
+      "name": "06 ANVIL",
+      "ticks": 399,
+      "events": 196
+    },
+    {
+      "index": 7,
+      "name": "07 SERAPH",
+      "ticks": 357,
+      "events": 184
+    },
+    {
+      "index": 8,
+      "name": "08 NEXUS",
+      "ticks": 280,
+      "events": 172
+    },
+    {
+      "index": 9,
+      "name": "09 KRAKEN",
+      "ticks": 343,
+      "events": 180
+    },
+    {
+      "index": 10,
+      "name": "10 PHANTOM",
+      "ticks": 338,
+      "events": 120
+    },
+    {
+      "index": 11,
+      "name": "11 CITADEL",
+      "ticks": 354,
+      "events": 178
+    },
+    {
+      "index": 12,
+      "name": "12 VORTEX",
+      "ticks": 238,
+      "events": 224
+    },
+    {
+      "index": 13,
+      "name": "13 BASILISK",
+      "ticks": 326,
+      "events": 172
+    },
+    {
+      "index": 14,
+      "name": "14 TITAN",
+      "ticks": 378,
+      "events": 186
+    },
+    {
+      "index": 15,
+      "name": "15 OVERLORD",
+      "ticks": 329,
+      "events": 282
+    },
+    {
+      "index": 16,
+      "name": "16 FREEPLAY",
+      "ticks": 292,
+      "events": 276
+    },
+    {
+      "index": 17,
+      "name": "VICTORY",
+      "ticks": 329,
+      "events": 166
+    }
+  ],
+  "samples": [
+    "LEAD",
+    "PAD",
+    "BASS",
+    "KICK",
+    "SNARE",
+    "HAT"
+  ],
+  "bank_bytes": 27034,
+  "checksum": 1373077,
+  "title_notes": 113
+}

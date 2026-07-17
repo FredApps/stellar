@@ -5,6 +5,12 @@ matching section in this file.
 
 ## Unreleased
 
+- Renamed the game to Ayrien Assault across the DOS build, browser port, sound bank,
+  configuration, floppy image, release archives, documentation, and generated captures.
+- Made browser music unlock on the first ordinary pointer, touch, click, or key gesture;
+  mobile windowed play no longer depends on entering fullscreen to start the title cue.
+- Added the 18-cue generated soundtrack bank and native PC speaker, AdLib OPL2,
+  Roland MT-32, and Sound Blaster playback backends, plus the bounded browser title arrangement.
 - Added sixteen distinct gameplay chapter themes: the soundtrack changes after every campaign boss.
 - Player ships now turn and fire downward when they fly above a boss; cannon, Laser, Wave, missiles,
   exhaust, boost trails, and sprites all follow the facing direction.

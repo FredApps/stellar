@@ -1,5 +1,5 @@
 ====================================================================
-  STELLAR ASSAULT  -  a VGA space shooter for the IBM PC
+  AYRIEN ASSAULT  -  a VGA space shooter for the IBM PC
 ====================================================================
 
 REQUIREMENTS
@@ -7,13 +7,24 @@ REQUIREMENTS
   - 4 MB RAM
   - MS-DOS 3.3 or later
   - VGA display (320x200 256-colour mode 13h)
-  - PC speaker for sound (optional)
+  - PC speaker, AdLib OPL2, Roland MT-32, or Sound Blaster 2.0+ (optional)
 
   Gameplay is paced near 35 FPS so faster 66 MHz and Pentium-class
   machines do not run the action at double speed.
 
 RUNNING
-      A:\> SHOOTER
+      A:\> AYRIEN
+
+  First launch asks for a sound device and saves AYRIEN.CFG. Overrides:
+      /SETUP       choose again
+      /PCSPK       PC speaker
+      /ADLIB       AdLib / OPL2
+      /MT32:330    Roland MT-32 on MPU-401 port 330h
+      /SB:220,7,1  Sound Blaster base 220h, IRQ 7, DMA 1
+      /NOSOUND     silence
+
+  AYRIEN.SND must remain beside AYRIEN.EXE for rich arrangements.
+  If a bank or device is unavailable, the game falls back to PC speaker.
 
   High scores are saved to HISCORE.DAT in the current directory.
 
@@ -63,7 +74,8 @@ GAMEPLAY
   groups. Each squad has a marked supply escort that carries an upgrade.
   Other escorts have improved drop chances, with no more than four support
   drops during one boss encounter.
-  The soundtrack changes after every boss.
+  The 18-cue soundtrack changes after every boss and has tailored PC speaker,
+  AdLib, MT-32, Sound Blaster, and browser arrangements.
   Defeating the W60 Overlord opens an animated campaign-complete screen.
   After the six-second celebration, Enter starts Freeplay and Esc saves
   the score and returns. Space is ignored so held fire cannot skip it.

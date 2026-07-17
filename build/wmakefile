@@ -1,15 +1,15 @@
-# wmakefile - Open Watcom 16-bit real-mode DOS build for SHOOTER
+# wmakefile - Open Watcom 16-bit real-mode DOS build for Ayrien Assault
 # Usage (from project root, with WATCOM env set):  wmake -f build\wmakefile
 
 CC   = wcc
-# -bt=dos  target DOS   -ms/-mc memory model   -4 486 scheduling
+# -bt=dos  target DOS   -ml multi-segment code/data -4 486 scheduling
 # -os optimise for size  -s no stack checks   -zq quiet   -oi intrinsics
-CFLAGS = -bt=dos -mc -4 -os -s -zq -oi -zp1 -Isrc
+CFLAGS = -bt=dos -ml -4 -os -s -zq -oi -zp1 -Isrc
 
-OBJS = main.obj game.obj vga.obj input.obj sound.obj sprites.obj hiscore.obj bmpdump.obj
+OBJS = main.obj game.obj vga.obj input.obj sound.obj sound_sb.obj sprites.obj hiscore.obj bmpdump.obj
 
-SHOOTER.EXE : $(OBJS)
-	wlink FORMAT DOS NAME SHOOTER.EXE FILE {$(OBJS)} LIBPATH $(%WATCOM)\lib286\dos LIBPATH $(%WATCOM)\lib286 OPTION QUIET
+AYRIEN.EXE : $(OBJS)
+	wlink FORMAT DOS NAME AYRIEN.EXE FILE {$(OBJS)} LIBPATH $(%WATCOM)\lib286\dos LIBPATH $(%WATCOM)\lib286 OPTION QUIET
 
 main.obj    : src\main.c
 	$(CC) $(CFLAGS) src\main.c
@@ -21,6 +21,8 @@ input.obj   : src\input.c
 	$(CC) $(CFLAGS) src\input.c
 sound.obj   : src\sound.c
 	$(CC) $(CFLAGS) src\sound.c
+sound_sb.obj : src\sound_sb.c
+	$(CC) $(CFLAGS) src\sound_sb.c
 sprites.obj : src\sprites.c
 	$(CC) $(CFLAGS) src\sprites.c
 hiscore.obj : src\hiscore.c
@@ -30,4 +32,4 @@ bmpdump.obj : src\bmpdump.c
 
 clean : .SYMBOLIC
 	-if exist *.obj del *.obj
-	-if exist SHOOTER.EXE del SHOOTER.EXE
+	-if exist AYRIEN.EXE del AYRIEN.EXE

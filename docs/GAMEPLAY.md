@@ -24,7 +24,7 @@ advances to the next page. The browser port provides matching touch buttons outs
 
 ## Objective
 
-Stellar Assault is a 60-wave arcade campaign with optional freeplay after victory. Clear waves,
+Ayrien Assault is a 60-wave arcade campaign with optional freeplay after victory. Clear waves,
 survive boss attacks, graze danger, build combos, earn medals, and push the high-score table.
 
 After game over, the title/scores flow shows last-run stats: wave reached, max combo, and bosses

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ayrien Assault Soundtrack Audition</title>
+<style>
+:root{color-scheme:dark;font-family:Consolas,"Courier New",monospace;background:#080b11;color:#edf2f8}
+*{box-sizing:border-box}body{margin:0}main{width:min(880px,calc(100% - 28px));margin:auto;padding:28px 0 48px}
+header{border-bottom:2px solid #d44872;margin-bottom:20px;padding-bottom:18px}h1{font-size:28px;margin:0 0 7px}
+p{color:#aeb8c7;line-height:1.5;margin:0;max-width:75ch}.device{display:flex;gap:7px;flex-wrap:wrap;margin:20px 0}
+button,select{border:1px solid #657287;border-radius:3px;background:#121925;color:#fff;font:inherit;padding:9px 12px}
+button{cursor:pointer}button.active{border-color:#68d7c4;background:#17302f;color:#b7fff2}button:hover{border-color:#f3c95e}
+.transport{display:grid;grid-template-columns:minmax(190px,1fr) auto auto;gap:8px;align-items:center}
+select{width:100%;min-width:0}.status{margin-top:16px;color:#68d7c4;font-size:13px}.notes{border-left:3px solid #f3c95e;padding:12px 14px;margin-top:24px;background:#101620}
+@media(max-width:560px){.transport{grid-template-columns:1fr 1fr}.transport select{grid-column:1/-1}}
+</style>
+</head>
+<body><main>
+<header><h1>AYRIEN ASSAULT // SOUNDTRACK LAB</h1><p>The exact 18-cue generated score, auditioned through compact device-character models. PC speaker intentionally plays the approved single lead only.</p></header>
+<div class="device" role="group" aria-label="Sound device">
+  <button class="active" data-device="pc">PC SPEAKER</button><button data-device="opl">ADLIB OPL2</button>
+  <button data-device="mt32">ROLAND MT-32</button><button data-device="sb">SOUND BLASTER</button><button data-device="web">BROWSER</button>
+</div>
+<div class="transport"><select id="track" aria-label="Track"></select><button id="play">PLAY</button><button id="stop">STOP</button></div>
+<div class="status" id="status">READY // PC SPEAKER</div>
+<div class="notes"><p>Audition models are for composition comparison. Native OPL2, DSP/DMA, and MPU-401 behavior is verified separately with the DOS diagnostics.</p></div>
+</main>
+<script src="../web/music-data.js"></script><script src="player.js"></script>
+</body></html>

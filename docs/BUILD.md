@@ -1,6 +1,6 @@
 # Building And Packaging
 
-Stellar cross-compiles to a 16-bit real-mode MS-DOS executable from a Windows
+Ayrien Assault cross-compiles to a 16-bit real-mode MS-DOS executable from a Windows
 host. The public repository does not include local toolchains, DOSBox configs,
 or generated binaries.
 
@@ -9,12 +9,12 @@ or generated binaries.
 | Tool | Purpose |
 |------|---------|
 | Open Watcom V2 | 16-bit DOS C compiler (`wcc`, `wlink`, `wmake`) |
-| Python 3 | floppy image builder and BMP-to-PNG helper |
+| Python 3 | deterministic soundtrack generator, floppy builder, and BMP helper |
 | DOSBox-X | optional emulator for smoke tests and `/bench` timing checks |
 
 `build\build.ps1` looks for Open Watcom in `tools\watcom` first and then
-`C:\tools\watcom`. The `tools` directory is ignored so a local portable
-toolchain can live beside the source without being published.
+`C:\tools\watcom`. Local toolchains under `tools/` are ignored; the versioned
+canonical score and generator live under `tools/music/`.
 
 ## Open Watcom
 
@@ -51,29 +51,30 @@ LIB     = %WATCOM%\lib286\dos;%WATCOM%\lib286
 The makefile compiles with:
 
 ```text
-wcc -bt=dos -mc -4 -ot -s -zq -oi -zp1 -Isrc
+wcc -bt=dos -ml -4 -os -s -zq -oi -zp1 -Isrc
 ```
 
 | Flag | Meaning |
 |------|---------|
 | `-bt=dos` | target MS-DOS |
-| `-mc` | compact model: near code, far data |
+| `-ml` | large model: far code and far data for the audio backends |
 | `-4` | 486 instruction scheduling |
-| `-ot` | optimize for speed |
+| `-os` | optimize for size |
 | `-s` | omit stack-overflow checks |
 | `-oi` | inline intrinsic functions |
 | `-zp1` | pack structures on 1-byte boundaries |
 | `-zq` | quiet output |
 
-The result is a DOS MZ executable named `SHOOTER.EXE`. Release packaging copies
-it as `STELLAR.EXE`.
+The build first regenerates `src/music_data.h`, `web/music-data.js`, and the
+versioned `dist/AYRIEN.SND` bank, then produces `AYRIEN.EXE`. Release
+packaging copies the executable as `AYRIEN.EXE`.
 
 ## Packaging
 
 Create a standard 1.44 MB FAT12 floppy image:
 
 ```powershell
-python build\mkfloppy.py dist\SHOOTER.IMG SHOOTER.EXE dist\README.TXT
+python build\mkfloppy.py dist\AYRIEN.IMG AYRIEN.EXE dist\AYRIEN.SND dist\README.TXT
 ```
 
 `HISCORE.DAT` is not shipped. The game creates it in the current directory on
@@ -84,9 +85,9 @@ first run.
 The repository includes `.github/workflows/release.yml`.
 
 - Every run builds the DOS executable on `windows-latest`.
-- Every run uploads an artifact named `Stellar-MS-DOS`.
+- Every run uploads an artifact named `Ayrien-Assault-MS-DOS`.
 - When the ref is a `v*` tag, the workflow publishes a GitHub Release with
-  `STELLAR.EXE`, `README.TXT`, and a zip package.
+  `AYRIEN.EXE`, `AYRIEN.SND`, `README.TXT`, and a zip package.
 
 Create a release by pushing a tag:
 
@@ -99,7 +100,7 @@ git push origin v0.1.0
 
 ### Visual Self-Test
 
-`SHOOTER.EXE /shot` renders representative title and gameplay frames to
+`AYRIEN.EXE /shot` renders representative title and gameplay frames to
 `TITLE.BMP` and `FRAME.BMP`.
 
 ```powershell
@@ -108,12 +109,14 @@ python build\bmp2png.py FRAME.BMP FRAME.png
 
 ### Audio Self-Test
 
-`SHOOTER.EXE /audiodump` runs the music and SFX mixer without video input and
-writes `AUDIO.TXT`.
+`AYRIEN.EXE /audiodump /PCSPK` runs the music and SFX mixer without video and
+writes `AUDIO.TXT`. Substitute `/ADLIB`, `/MT32:330`, or `/SB:220,7,1` to test
+backend initialization; the dump names the device actually selected after any
+fallback.
 
 ### Speed Check
 
-`SHOOTER.EXE /bench` renders for about 10 seconds and writes `BENCH.TXT`.
+`AYRIEN.EXE /bench` renders for about 10 seconds and writes `BENCH.TXT`.
 Gameplay is intentionally capped by presenting on one VGA retrace and waiting
 through the next, which holds fast machines near 35 FPS. Run `/bench` under
 multiple DOSBox-X CPU settings to check that faster machines do not speed the

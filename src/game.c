@@ -2401,8 +2401,10 @@ static void draw_title(void)
     char b[40];
     i16 page = (i16)((frame / 210) & 3);
     i16 fx = (i16)(frame % 360) - 32;
-    text_center(34, "STELLAR ASSAULT", C_YELLOW);
+    text_center(34, "AYRIEN ASSAULT", C_YELLOW);
     text_center(50, "a vga space shooter", C_LGRAY);
+    sprintf(b, "AUDIO: %s", snd_device_name());
+    text_center(64, b, C_DGRAY);
     if (frame & 16) text_center(84, "PRESS SPACE TO PLAY", C_WHITE);
     sprintf(b, "< DIFFICULTY: %s >", DIFNAME[g_diff]);
     text_center(104, b, (g_diff == DIF_HARD) ? C_LRED : (g_diff == DIF_EASY) ? C_LGREEN : C_YELLOW);
@@ -2713,7 +2715,7 @@ void game_run(void)
 
         if (state == ST_PLAY && key_hit(SC_P)) {
             paused = !paused;
-            if (paused) snd_silence();
+            snd_pause(paused);
             kbd_clear();               /* drop held keys so the ship can't drift across a pause */
         }
 

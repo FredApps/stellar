@@ -42,22 +42,26 @@ jobs:
       - name: Build executable
         shell: pwsh
         run: |
+          python tools\music\build_music.py
+          if ((Get-Item dist\AYRIEN.SND).Length -gt 512KB) { throw "AYRIEN.SND exceeds 512 KB" }
           wmake -f build\wmakefile
           New-Item -ItemType Directory -Force release | Out-Null
-          Copy-Item SHOOTER.EXE release\STELLAR.EXE
+          Copy-Item AYRIEN.EXE release\AYRIEN.EXE
+          Copy-Item dist\AYRIEN.SND release\AYRIEN.SND
           Copy-Item dist\README.TXT release\README.TXT
-          python build\mkfloppy.py release\STELLAR.IMG release\STELLAR.EXE release\README.TXT
-          Compress-Archive -Path release\STELLAR.EXE,release\STELLAR.IMG,release\README.TXT -DestinationPath release\Stellar-MS-DOS.zip -Force
+          python build\mkfloppy.py release\AYRIEN.IMG release\AYRIEN.EXE release\AYRIEN.SND release\README.TXT
+          Compress-Archive -Path release\AYRIEN.EXE,release\AYRIEN.SND,release\AYRIEN.IMG,release\README.TXT -DestinationPath release\Ayrien-Assault-MS-DOS.zip -Force
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Stellar-MS-DOS
+          name: Ayrien-Assault-MS-DOS
           path: |
-            release/STELLAR.EXE
-            release/STELLAR.IMG
+            release/AYRIEN.EXE
+            release/AYRIEN.SND
+            release/AYRIEN.IMG
             release/README.TXT
-            release/Stellar-MS-DOS.zip
+            release/Ayrien-Assault-MS-DOS.zip
             release/RELEASE_NOTES.md
 
       - name: Publish GitHub release
@@ -66,7 +70,8 @@ jobs:
         with:
           body_path: release/RELEASE_NOTES.md
           files: |
-            release/STELLAR.EXE
-            release/STELLAR.IMG
+            release/AYRIEN.EXE
+            release/AYRIEN.SND
+            release/AYRIEN.IMG
             release/README.TXT
-            release/Stellar-MS-DOS.zip
+            release/Ayrien-Assault-MS-DOS.zip

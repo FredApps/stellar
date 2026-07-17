@@ -1,5 +1,7 @@
-# Local toolchains and emulator installs
-/tools/
+# Local toolchains and emulator installs; soundtrack sources are versioned.
+/tools/*
+!/tools/music/
+/tools/music/__pycache__/
 
 # Open Watcom build output
 /*.obj
@@ -8,6 +10,7 @@
 /*.lnk
 /SHOOTER.EXE
 /STELLAR.EXE
+/AYRIEN.EXE
 
 # Verification output and runtime state
 /TITLE.BMP
@@ -23,7 +26,7 @@
 /BOSSES1.BMP
 /BOSSES2.BMP
 /WIN.BMP
-/AUDIO.TXT
+/AUDIO*.TXT
 /BENCH.TXT
 /SELFTEST.TXT
 /web/web.config
@@ -37,6 +40,7 @@
 
 # Local DOSBox configs contain machine-specific mount paths
 /build/*.conf
+/build/nobank/
 
 # Local deployment and secret material
 /.secrets/

@@ -1,4 +1,4 @@
-/* defs.h - shared types and constants for SHOOTER (16-bit real-mode DOS/VGA) */
+/* defs.h - shared types and constants for Ayrien Assault (16-bit real-mode DOS/VGA) */
 #ifndef DEFS_H
 #define DEFS_H
 

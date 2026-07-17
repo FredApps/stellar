@@ -24,6 +24,7 @@ static int audiodump(void)
     int i, chapter;
     if (!f) return 1;
     snd_init();
+    fprintf(f, "DEVICE %s\n", snd_device_name());
     fprintf(f, "A\n");
     snd_music_set(MUS_TITLE);
     for (i = 0; i < 120; i++) { snd_update(); fprintf(f, "%d\n", snd_last_freq()); }
@@ -59,7 +60,7 @@ static int audiodump(void)
     fprintf(f, "F\n");
     snd_music_set(MUS_WIN);
     for (i = 0; i < 180; i++) { snd_update(); fprintf(f, "%d\n", snd_last_freq()); }
-    snd_silence();
+    snd_shutdown();
     fclose(f);
     return 0;
 }
@@ -68,7 +69,7 @@ static bool kbd_on = FALSE;
 
 static void cleanup(void)
 {
-    snd_silence();
+    snd_shutdown();
     if (kbd_on) { kbd_remove(); kbd_on = FALSE; }
     vga_shutdown();
 }
@@ -77,14 +78,17 @@ static void on_break(int sig) { (void)sig; exit(1); }
 
 int main(int argc, char **argv)
 {
-    bool shot = FALSE, bench = FALSE; int bscene = 0;
+    bool shot = FALSE, bench = FALSE, audio = FALSE; int bscene = 0;
     int i;
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "/shot") || !strcmp(argv[i], "-shot")) shot = TRUE;
         if (!strcmp(argv[i], "/bench")) bench = TRUE;
         if (!strcmp(argv[i], "/benchhelp")) { bench = TRUE; bscene = 1; }
-        if (!strcmp(argv[i], "/audiodump")) return audiodump();  /* no video */
+        if (!strcmp(argv[i], "/audiodump")) audio = TRUE;
     }
+
+    snd_configure(argc, argv, (!shot && !bench && !audio) ? TRUE : FALSE);
+    if (audio) return audiodump();
 
     if (vga_init() != 0) return 1;
     atexit(cleanup);

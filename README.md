@@ -1,8 +1,8 @@
-# Stellar
+# Ayrien Assault
 
-Stellar is a vertically scrolling VGA space shooter for period PC hardware:
-an Intel 486, MS-DOS, VGA mode 13h, and a PC speaker. It is written in C for
-16-bit real mode with Open Watcom. The current DOS executable is 131,020 bytes;
+Ayrien Assault is a vertically scrolling VGA space shooter for period PC hardware:
+an Intel 486, MS-DOS, VGA mode 13h, and classic DOS audio hardware. It is written
+in C for 16-bit real mode with Open Watcom. The current DOS executable is about 148 KB;
 the release floppy image is exactly 1,474,560 bytes, the standard 1.44 MB FAT12
 floppy size. The browser port is included in `web/` for local or self-hosted deployment.
 
@@ -30,7 +30,8 @@ floppy size. The browser port is included in `web/` for local or self-hosted dep
   Wave widens from 5 to 11 shots, and marked boss supply escorts carry upgrades.
 - Easy, Normal, and Hard difficulties share one high-score table; harder modes
   apply higher score multipliers.
-- Sixteen PC-speaker chapter themes, changing after every boss, plus priority-mixed sound effects.
+- Eighteen remastered cues arranged for PC speaker, AdLib OPL2, Roland MT-32,
+  Sound Blaster, and a dedicated stereo Web Audio mix in the browser port.
 - Top-8 high-score table saved to `HISCORE.DAT`.
 - Animated campaign-complete scene after the wave-60 Overlord, with optional
   freeplay whose boss durability is capped at the wave-60 level.
@@ -38,10 +39,10 @@ floppy size. The browser port is included in `web/` for local or self-hosted dep
 
 ## Hardware Compatibility
 
-Stellar targets IBM PC compatibles from the 486 era onward. The practical
+Ayrien Assault targets IBM PC compatibles from the 486 era onward. The practical
 baseline is a 33 MHz 486SX or 486DX with VGA and conventional DOS memory. A
 math coprocessor is not required, and the game does not use XMS, EMS, protected
-mode, DPMI, or a sound card.
+mode, DPMI, or an FPU.
 
 Faster machines are supported. The native DOS build intentionally caps gameplay
 near 35 FPS by waiting across VGA retraces, so a 486DX2/66, early Pentium,
@@ -51,11 +52,12 @@ finish the full update and 64 KB VGA copy in time.
 
 Video requires a VGA-compatible adapter that supports BIOS mode 13h
 (320x200, 256 colors) and standard VGA DAC/retrace ports. This includes common
-ISA/VLB/PCI VGA and SVGA cards from the era as well as DOSBox-X. Audio uses the
-PC speaker only; AdLib, Sound Blaster, and MIDI hardware are not required.
+ISA/VLB/PCI VGA and SVGA cards from the era as well as DOSBox-X. PC speaker is
+the universal fallback; AdLib OPL2, Roland MT-32 through MPU-401 UART, and
+Sound Blaster 2.0+ are optional.
 
 Known-good environments include MS-DOS 3.3 or later, MS-DOS 5/6.x, Windows 9x
-DOS mode, FreeDOS, and DOSBox-X. The release package includes both `STELLAR.EXE`
+DOS mode, FreeDOS, and DOSBox-X. The release package includes both `AYRIEN.EXE`
 and a standard 1.44 MB FAT12 floppy image.
 
 ## Requirements
@@ -66,14 +68,14 @@ and a standard 1.44 MB FAT12 floppy image.
 | RAM | 4 MB nominal target, far less used at runtime |
 | OS | MS-DOS 3.3 or later, Windows 9x DOS mode, FreeDOS, or DOSBox-X |
 | Video | VGA mode 13h compatible adapter |
-| Sound | PC speaker optional |
-| Storage | `STELLAR.EXE` is 131,020 bytes; release floppy image is exactly 1.44 MB |
+| Sound | PC speaker; optional AdLib OPL2, MT-32/MPU-401, or Sound Blaster 2.0+ |
+| Storage | About 175 KB for `AYRIEN.EXE` plus `AYRIEN.SND`; floppy image is exactly 1.44 MB |
 
 ## Browser Port
 
 The JS/Canvas port lives in `web/` and can be run locally or deployed to any static host.
 It keeps the same 320x200 framebuffer and frame-locked game feel, while adding
-Web Audio, mouse and relative-drag steering, a floating mobile thumb control,
+a bounded stereo arcade Web Audio score, mouse and relative-drag steering, a mobile thumb control,
 mobile fullscreen controls, replay/title score actions, and server leaderboard sync.
 
 ## Quick Start
@@ -82,16 +84,16 @@ Download the current MS-DOS build from the
 [latest release](https://github.com/FredApps/Stellar/releases/latest), then run:
 
 ```text
-A:\> STELLAR
+A:\> AYRIEN
 ```
 
 In DOSBox-X, mount the release floppy image or the directory containing the
 executable:
 
 ```text
-imgmount a STELLAR.IMG -t floppy
+imgmount a AYRIEN.IMG -t floppy
 a:
-STELLAR
+AYRIEN
 ```
 
 ## Build From Source
@@ -100,8 +102,12 @@ On Windows with Open Watcom V2 available:
 
 ```powershell
 build\build.ps1
-python build\mkfloppy.py dist\SHOOTER.IMG SHOOTER.EXE dist\README.TXT
+python build\mkfloppy.py dist\AYRIEN.IMG AYRIEN.EXE dist\AYRIEN.SND dist\README.TXT
 ```
+
+On first interactive launch, choose a sound device; the choice is saved in
+`AYRIEN.CFG`. Use `/SETUP`, `/PCSPK`, `/ADLIB`, `/MT32:330`,
+`/SB:220,7,1`, or `/NOSOUND` to override it.
 
 GitHub Actions builds release artifacts automatically when a `v*` tag is
 pushed. Each release tag must have a matching section in
@@ -146,7 +152,7 @@ files, and private deployment settings are intentionally not tracked.
 
 ## License
 
-Stellar is released under the GNU General Public License version 3. See
+Ayrien Assault is released under the GNU General Public License version 3. See
 [LICENSE](LICENSE).
 
 ## Contributors

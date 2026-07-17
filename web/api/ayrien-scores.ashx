@@ -1,4 +1,4 @@
-<%@ WebHandler Language="C#" Class="StellarScoresHandler" %>
+<%@ WebHandler Language="C#" Class="AyrienScoresHandler" %>
 
 using System;
 using System.Collections.Generic;
@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 using System.Web;
 using System.Web.Script.Serialization;
 
-public class StellarScoresHandler : IHttpHandler
+public class AyrienScoresHandler : IHttpHandler
 {
     private static readonly object Gate = new object();
     private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
@@ -117,6 +117,7 @@ public class StellarScoresHandler : IHttpHandler
     private static List<ScoreEntry> LoadScoresUnlocked()
     {
         var path = ScorePath();
+        if (!File.Exists(path)) path = LegacyScorePath();
         if (!File.Exists(path)) return DefaultScores();
         try
         {
@@ -156,6 +157,12 @@ public class StellarScoresHandler : IHttpHandler
     }
 
     private static string ScorePath()
+    {
+        var mapped = HttpContext.Current.Server.MapPath("~/App_Data/ayrien-assault-scores.json");
+        return mapped ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "App_Data", "ayrien-assault-scores.json");
+    }
+
+    private static string LegacyScorePath()
     {
         var mapped = HttpContext.Current.Server.MapPath("~/App_Data/stellar-assault-scores.json");
         return mapped ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "App_Data", "stellar-assault-scores.json");

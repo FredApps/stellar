@@ -1,4 +1,4 @@
-/* STELLAR ASSAULT - browser port of the MS-DOS/VGA original.
+/* AYRIEN ASSAULT - browser port of the MS-DOS/VGA original.
  * Faithful 1:1 translation of the C game logic (src/game.c et al.):
  * 320x200 indexed framebuffer, same sprites, same waves/bosses/scoring,
  * fixed 35 Hz logic matching the paced DOS build, Web Audio music.
@@ -706,13 +706,17 @@ window.addEventListener('blur', clearInput);
 let ac = null, masterGain = null, musicGain = null, sfxGain = null, noiseBuf = null;
 let sfxMuted = false, musicMuted = false;
 let musicTrack = -1, musicChapter = 0, musIdx = 0, nextNoteTime = 0, musicPaused = false;
+const legacyMusicSources = new Set();
+const titleMusicPlayer = createTitleMusicPlayer({
+  context: () => ac,
+  musicGain: () => musicGain,
+  noiseBuffer: () => noiseBuf,
+  score: TITLE_MUSIC_SCORE,
+  maxEvents: 32,
+  maxSources: 64
+});
 
-/* DOS melodies (freq Hz, duration frames @70Hz) - the arrangement adds voices */
-const title_mel = [
-  [392,10],[523,10],[659,10],[784,16],[0,3],[659,8],[784,18],[0,5],
-  [440,10],[587,10],[698,10],[880,16],[0,3],[784,8],[659,18],[0,6],
-  [523,8],[523,8],[494,8],[440,8],[392,14],[0,3],
-  [440,8],[494,10],[523,20],[0,10]];
+/* Legacy gameplay/victory melodies. The menu uses generated TITLE_MUSIC_SCORE spans. */
 const game_mel = [
  [[110,7],[131,7],[147,8],[165,12],[0,5],[147,6],[131,6],[110,10],[0,8],[98,6],[110,6],[123,8],[131,10],[110,8],[0,8],[110,14]],
  [[123,6],[147,6],[185,8],[165,10],[0,4],[147,6],[123,8],[98,10],[0,7],[123,6],[131,6],[147,8],[185,8],[165,10],[0,6],[123,14]],
@@ -737,8 +741,68 @@ const win_mel = [
   [698,8],[880,8],[1047,8],[1175,18],[0,6],
   [1047,10],[784,10],[880,10],[1047,24],[0,14]];
 
+function titleMusicStop() {
+  titleMusicPlayer.stop();
+  titleMusicPublish();
+}
+function titleMusicReset(delay = .06) {
+  titleMusicPlayer.stop();
+  if (!ac || ac.state !== 'running' || musicMuted || musicPaused || musicTrack !== MUS_TITLE) return;
+  titleMusicPlayer.reset(delay);
+  titleMusicPublish();
+}
+function titleMusicStart() {
+  if (ac && ac.state === 'running' && !musicMuted && !musicPaused && musicTrack === MUS_TITLE) titleMusicPlayer.start();
+  titleMusicPublish();
+}
+function titleMusicSchedule() {
+  if (!ac || ac.state !== 'running' || musicMuted || musicPaused || musicTrack !== MUS_TITLE) return;
+  titleMusicPlayer.schedule();
+  titleMusicPublish();
+}
+function titleMusicAudioReady() {
+  if (musicTrack === MUS_TITLE && !musicMuted && !musicPaused) titleMusicStart();
+}
+function titleMusicPublish() {
+  const debug = titleMusicPlayer.debug(), root = document.documentElement;
+  root.dataset.titleMusicContext = debug.context;
+  root.dataset.titleMusicFaults = String(debug.faults);
+  root.dataset.titleMusicLive = String(debug.liveSources);
+  root.dataset.titleMusicPeak = String(debug.peakSources);
+  root.dataset.titleMusicRunning = debug.running ? '1' : '0';
+  root.dataset.titleMusicTotal = String(debug.totalScheduled);
+}
+function trackLegacyMusicSource(source) {
+  legacyMusicSources.add(source);
+  source.addEventListener('ended', () => legacyMusicSources.delete(source), { once: true });
+}
+function stopLegacyMusicSources() {
+  const stopAt = ac ? ac.currentTime + .005 : 0;
+  for (const source of legacyMusicSources) {
+    try { source.stop(stopAt); } catch (_) {}
+  }
+  legacyMusicSources.clear();
+}
+function primeAudioUnlock() {
+  if (!ac || ac.state === 'running' || !masterGain) return;
+  try {
+    const source = ac.createBufferSource();
+    source.buffer = ac.createBuffer(1, 1, ac.sampleRate || 22050);
+    source.connect(masterGain);
+    source.start(0);
+  } catch (_) {}
+}
+
 function bootAudio() {
-  if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+  if (ac) {
+    if (ac.state === 'suspended') {
+      primeAudioUnlock();
+      const resumed = ac.resume();
+      if (resumed && resumed.then) resumed.then(titleMusicAudioReady).catch(() => {});
+    }
+    titleMusicPublish();
+    return;
+  }
   ac = new (window.AudioContext || window.webkitAudioContext)();
   /* soft limiter so overlapping SFX + music voices never hard-clip */
   const comp = ac.createDynamicsCompressor();
@@ -751,18 +815,34 @@ function bootAudio() {
   noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  if (ac.state === 'suspended') ac.resume();
+  if (ac.state === 'suspended') {
+    primeAudioUnlock();
+    const resumed = ac.resume();
+    if (resumed && resumed.then) resumed.then(titleMusicAudioReady).catch(() => {});
+  } else titleMusicAudioReady();
+  ac.onstatechange = () => {
+    if (ac.state === 'running') titleMusicAudioReady();
+    else titleMusicStop();
+  };
   nextNoteTime = ac.currentTime + 0.05;
+  titleMusicPublish();
 }
+window.addEventListener('pointerdown', bootAudio, { capture: true, passive: true });
+window.addEventListener('touchend', bootAudio, { capture: true, passive: true });
+window.addEventListener('click', bootAudio, { capture: true, passive: true });
 function snd_music_muted() { return musicMuted; }
 function snd_sfx_muted() { return sfxMuted; }
 function snd_music_toggle() {
   musicMuted = !musicMuted;
+  if (musicMuted) { titleMusicStop(); stopLegacyMusicSources(); }
   if (musicGain && ac) {
     musicGain.gain.cancelScheduledValues(ac.currentTime);
     musicGain.gain.setTargetAtTime(musicMuted ? 0 : 0.42, ac.currentTime, 0.02);
   }
-  if (!musicMuted && ac) nextNoteTime = ac.currentTime + 0.05;   /* don't burst-schedule missed notes */
+  if (!musicMuted && ac) {
+    nextNoteTime = ac.currentTime + 0.05;
+    if (musicTrack === MUS_TITLE) titleMusicReset();
+  }
   updateAudioButtons();
 }
 function snd_sfx_toggle() {
@@ -786,6 +866,7 @@ function voice(type, f0, f1, t0, dur, vol, dest) {
   g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
   o.connect(g); g.connect(dest || sfxGain);
   o.start(t0); o.stop(t0 + dur + 0.05);
+  if (dest === musicGain) trackLegacyMusicSource(o);
 }
 function noise(t0, dur, vol, fc0, fc1, type, dest) {
   const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
@@ -798,6 +879,7 @@ function noise(t0, dur, vol, fc0, fc1, type, dest) {
   g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
   s.connect(f); f.connect(g); g.connect(dest || sfxGain);
   s.start(t0); s.stop(t0 + dur + 0.05);
+  if (dest === musicGain) trackLegacyMusicSource(s);
 }
 function snd_sfx(id) {
   if (!ac || sfxMuted) return;
@@ -817,6 +899,8 @@ function snd_sfx(id) {
   }
 }
 function snd_music_set(track) {
+  titleMusicStop();
+  stopLegacyMusicSources();
   musicTrack = track; musIdx = 0; musicPaused = false;
   if (ac) {
     /* clear any pending SFX "duck" ramps and force full music level, so
@@ -824,13 +908,14 @@ function snd_music_set(track) {
     musicGain.gain.cancelScheduledValues(ac.currentTime);
     musicGain.gain.setValueAtTime(0.42, ac.currentTime);
     nextNoteTime = ac.currentTime + 0.08;
+    if (track === MUS_TITLE) titleMusicReset(.08);
   }
 }
 function snd_music_game(chapter) {
   musicChapter = clamp(Math.floor(chapter || 0), 0, 15);
   snd_music_set(MUS_GAME);
 }
-function snd_music_stop() { musicTrack = -1; }
+function snd_music_stop() { titleMusicStop(); stopLegacyMusicSources(); musicTrack = -1; }
 
 /* Pause/resume audio to mirror the DOS build's snd_silence() on pause.
    Ramps music to silence (killing already-scheduled notes routed through
@@ -838,45 +923,60 @@ function snd_music_stop() { musicTrack = -1; }
 function snd_pause(p) {
   musicPaused = p;
   if (!ac) return;
-  if (p) musicGain.gain.cancelScheduledValues(ac.currentTime);
-  musicGain.gain.setTargetAtTime(p ? 0 : 0.42, ac.currentTime, 0.015);
-  if (!p) nextNoteTime = ac.currentTime + 0.05;   /* resume without burst catch-up */
+  if (p) {
+    titleMusicStop();
+    stopLegacyMusicSources();
+    musicGain.gain.cancelScheduledValues(ac.currentTime);
+    musicGain.gain.setValueAtTime(0, ac.currentTime);
+  } else {
+    musicGain.gain.cancelScheduledValues(ac.currentTime);
+    musicGain.gain.setValueAtTime(0.42, ac.currentTime);
+  }
+  if (!p) {
+    nextNoteTime = ac.currentTime + 0.05;
+    if (musicTrack === MUS_TITLE) titleMusicReset();
+  }
 }
 
 /* three-voice arrangement: lead + sub-octave bass + noise hat */
 function scheduleMusic() {
-  if (!ac || musicMuted || musicPaused || musicTrack < 0) return;
+  if (!ac || ac.state !== 'running' || musicMuted || musicPaused || musicTrack < 0) return;
+  if (musicTrack === MUS_TITLE) { titleMusicSchedule(); return; }
   if (nextNoteTime < ac.currentTime - 0.1) nextNoteTime = ac.currentTime + 0.05; /* tab-switch snap */
-  const mel = musicTrack === MUS_TITLE ? title_mel : musicTrack === MUS_WIN ? win_mel : game_mel[musicChapter];
+  const mel = musicTrack === MUS_WIN ? win_mel : game_mel[musicChapter];
   while (nextNoteTime < ac.currentTime + 0.30) {
     const [f, frames] = mel[musIdx];
     const dur = frames / LOGIC_HZ;   /* frame-locked tempo, like snd_update() */
     const t = nextNoteTime;
     if (f > 0) {
-      if (musicTrack === MUS_TITLE) {
-        voice('square', f, f, t, dur * 0.92, 0.16, musicGain);
-        voice('square', f * 1.005, f * 1.005, t, dur * 0.92, 0.10, musicGain); /* chorus */
-        voice('triangle', f / 2, f / 2, t, dur, 0.22, musicGain);              /* bass   */
-        noise(t, 0.03, 0.06, 6000, 6000, 'highpass', musicGain);               /* hat    */
-      } else {
-        /* in-game groove, transposed up an octave so it's audible on small
-           speakers (the DOS pulse sat at 98-147 Hz = near-inaudible in a
-           browser). Lead + fifth + original bass body + hat. */
-        const leadType = (musicChapter % 3 === 0) ? 'triangle' : (musicChapter % 3 === 1) ? 'square' : 'sawtooth';
-        voice(leadType, f * 2, f * 2, t, dur, 0.20, musicGain);                 /* audible lead */
-        voice('square', f * (musicChapter & 1 ? 2.5 : 3), f * (musicChapter & 1 ? 2.5 : 3), t, dur * 0.5, 0.05, musicGain);
-        voice('square', f, f, t, dur, 0.16, musicGain);                        /* bass body    */
-        if ((musIdx & 3) === 0) noise(t, 0.03, 0.05, 4000, 4000, 'highpass', musicGain); /* hat */
-      }
+      /* Gameplay groove remains on the proven bounded legacy scheduler. */
+      const leadType = (musicChapter % 3 === 0) ? 'triangle' : (musicChapter % 3 === 1) ? 'square' : 'sawtooth';
+      voice(leadType, f * 2, f * 2, t, dur, 0.20, musicGain);
+      voice('square', f * (musicChapter & 1 ? 2.5 : 3), f * (musicChapter & 1 ? 2.5 : 3), t, dur * 0.5, 0.05, musicGain);
+      voice('square', f, f, t, dur, 0.16, musicGain);
+      if ((musIdx & 3) === 0) noise(t, 0.03, 0.05, 4000, 4000, 'highpass', musicGain);
     }
     nextNoteTime += dur;
     musIdx = (musIdx + 1) % mel.length;
   }
 }
 
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) titleMusicStop();
+  else if (ac && ac.state === 'running' && musicTrack === MUS_TITLE) titleMusicReset();
+});
+
+window.AYRIEN_TITLE_MUSIC_DEBUG = () => Object.assign(titleMusicPlayer.debug(), {
+  cue: musicTrack === MUS_TITLE ? 'TITLE' : musicTrack === MUS_GAME ? 'GAME' : musicTrack === MUS_WIN ? 'WIN' : 'NONE',
+  chapter: musicChapter,
+  legacyLiveSources: legacyMusicSources.size,
+  paused: musicPaused
+});
+
 /* ================= high scores (server + local fallback) ================= */
-const HS_KEY = 'stellar_assault_hiscores';
-const SCORE_API = 'api/stellar-scores.ashx';
+const HS_KEY = 'ayrien_assault_hiscores';
+const LEGACY_HS_KEY = 'stellar_assault_hiscores';
+const SCORE_API = 'api/ayrien-scores.ashx';
 const DEF_NAMES = ['ACE','NOVA','COMET','ORION','VEGA','PULSAR','ROOKIE','CADET','DRIFT','PIXEL'];
 let g_hi = [];
 let scoreStatus = 'SYNCING SCORES';
@@ -912,8 +1012,9 @@ function setScoreStatus(s) {
 }
 function hi_load() {
   try {
-    const v = cleanScoreList(JSON.parse(localStorage.getItem(HS_KEY)));
-    if (v) { g_hi = v; return; }
+    const saved = localStorage.getItem(HS_KEY) || localStorage.getItem(LEGACY_HS_KEY);
+    const v = cleanScoreList(JSON.parse(saved));
+    if (v) { g_hi = v; hi_save(); return; }
   } catch (e) {}
   hi_defaults();
 }
@@ -2713,7 +2814,7 @@ function draw_play() {
 function draw_title() {
   const page = Math.floor(frame / 210) & 3;
   const fx = (frame % 360) - 32;
-  text_center(34, 'STELLAR ASSAULT', C_YELLOW);
+  text_center(34, 'AYRIEN ASSAULT', C_YELLOW);
   text_center(50, 'A VGA SPACE SHOOTER', C_LGRAY);
   if (frame & 16) text_center(84, 'CLICK / TAP TO PLAY', C_WHITE);
   text_center(104, '< DIFFICULTY: ' + DIFNAME[g_diff] + ' >',

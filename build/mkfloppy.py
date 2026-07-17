@@ -1,6 +1,6 @@
 """mkfloppy.py - build a 1.44 MB FAT12 floppy image containing the game.
 
-Usage:  python build/mkfloppy.py SHOOTER.IMG SHOOTER.EXE dist/README.TXT ...
+Usage:  python build/mkfloppy.py AYRIEN.IMG AYRIEN.EXE dist/README.TXT ...
 Produces a standard 1,474,560-byte FAT12 image mountable with
 `imgmount a IMG -t floppy` in DOSBox / on real hardware.
 """
@@ -32,7 +32,7 @@ def boot_sector():
     struct.pack_into('<H', b, 26, 2)            # heads
     b[38] = 0x29                                # extended boot sig
     struct.pack_into('<I', b, 39, 0x12345678)   # volume serial
-    b[43:54] = b'STELLAR    '                    # volume label (11)
+    b[43:54] = b'AYRIEN     '                    # volume label (11)
     b[54:62] = b'FAT12   '
     b[510] = 0x55; b[511] = 0xAA
     return b
@@ -43,6 +43,22 @@ def name83(fn):
     return (stem[:8].ljust(8) + ext[:3].ljust(3)).encode('ascii')
 
 def build(out, files):
+    if not files:
+        raise SystemExit("no input files")
+    if len(files) > ROOT_ENTS:
+        raise SystemExit("too many root-directory entries")
+    names = [name83(path) for path in files]
+    if len(set(names)) != len(names):
+        raise SystemExit("duplicate FAT 8.3 filename")
+    missing = [path for path in files if not os.path.isfile(path)]
+    if missing:
+        raise SystemExit("missing input: %s" % missing[0])
+    required_clusters = sum(max(1, (os.path.getsize(path) + BYTES_PER_CLUS - 1) // BYTES_PER_CLUS)
+                            for path in files)
+    available_clusters = TOTAL_SECT - DATA_START
+    if required_clusters > available_clusters:
+        raise SystemExit("floppy capacity exceeded: %d > %d clusters" %
+                         (required_clusters, available_clusters))
     img = bytearray(TOTAL_SECT * SECT)
     img[0:SECT] = boot_sector()
 

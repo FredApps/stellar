@@ -1,6 +1,6 @@
 # Architecture
 
-Stellar is a single-threaded, real-mode DOS program. The main loop reads input,
+Ayrien Assault is a single-threaded, real-mode DOS program. The main loop reads input,
 updates the world, draws to a back buffer, and presents one finished 320x200
 frame.
 
@@ -8,8 +8,8 @@ frame.
 
 - CPU target: Intel 80486 or better.
 - OS target: MS-DOS, 16-bit real mode.
-- Compiler: Open Watcom, compact memory model (`-mc`).
-- Code pointers are near; data pointers are far.
+- Compiler: Open Watcom, large memory model (`-ml`).
+- Code and data pointers are far so the soundtrack drivers and score fit cleanly.
 - The back buffer (`g_back`) and static nebula background (`g_bg`) are each one
   64,000-byte far allocation.
 - The game uses conventional memory only. It does not require XMS, EMS, a DPMI
@@ -42,7 +42,8 @@ native DOS build.
 | `main.c` | entry point, command-line modes, init/shutdown |
 | `vga.c` | mode 13h, palette, frame pacing, drawing primitives |
 | `input.c` | INT 9 keyboard ISR and key state helpers |
-| `sound.c` | PC speaker tones, music sequencer, priority SFX mixer |
+| `sound.c` | score bank, PC speaker, OPL2, MT-32, config, priority SFX |
+| `sound_sb.c` | Sound Blaster DSP, DMA IRQ, four-voice sample mixer |
 | `sprites.c` | sprite bitmaps and ROM font text drawing |
 | `game.c` | state machine, waves, enemies, boss logic, scoring |
 | `hiscore.c` | `HISCORE.DAT` load/save and ranking |
@@ -76,11 +77,12 @@ Consumers use:
 
 ## Sound
 
-The PC speaker is also frame-driven. `snd_update()` runs once per game frame.
-Sound effects have priorities so explosions and power-ups are not swallowed by
-low-priority fire pips. Music resumes when the active SFX finishes. Sixteen
-compact gameplay note tables are selected by the number of defeated bosses,
-with title and victory tracks kept separate.
+The canonical 18-cue score is quantized to the 35 Hz game clock. PC speaker uses
+its generated single-voice table. AdLib and MT-32 consume four-lane event data;
+Sound Blaster mixes four 8-bit, 11.025 kHz voices through auto-init DMA. The
+external `AYRIEN.SND` bank is loaded into far conventional memory before play.
+Missing or invalid banks and failed hardware probes fall back to PC speaker.
+Effects retain priority over low-value fire sounds on every backend.
 
 ## Game Logic
 
@@ -91,8 +93,7 @@ Player and missile structures retain vertical direction during boss fights;
 up/down sprite variants are generated once during sprite initialization.
 
 Boss sprites are procedural pixel bitmaps built at startup into
-`spr_boss[15][72*52]` (56,160 bytes — one far object, kept under the 64 KB
-compact-model limit). Several bosses add cheap per-frame overlays at draw time
+`spr_boss[15][72*52]` (56,160 bytes, one far object). Several bosses add cheap per-frame overlays at draw time
 (tentacles, orbiting pods/orbs, tracking pupils) on top of the static bitmap.
 Boss movement is a per-kind state machine in `boss_move()` bounded by a
 per-boss vertical envelope (`boss_max_y()`); an every-other-frame O(n^2)
@@ -109,7 +110,7 @@ Hidden command-line modes:
 - `/shot` renders `TITLE.BMP`, `FRAME.BMP`, `HELP1.BMP` through `HELP6.BMP`, `STAGES.BMP`, and the
   boss roster atlases `BOSSES1.BMP`/`BOSSES2.BMP`, then runs headless logic
   checks (enemy separation + all boss movement envelopes) into `SELFTEST.TXT`.
-- `/audiodump` writes speaker frequencies to `AUDIO.TXT`.
+- `/audiodump` writes backend identity and sequencer diagnostics to `AUDIO.TXT`.
 - `/bench` writes a rough rendered-frame timing sample to `BENCH.TXT`.
 
 ## Constraints
@@ -117,4 +118,4 @@ Hidden command-line modes:
 - The engine prefers determinism and tiny real-mode code over timer complexity.
 - If a slow machine misses the 35 FPS budget, the game slows rather than
   dropping simulation frames.
-- Audio is single-channel by design.
+- PC speaker remains deliberately monophonic; richer devices use bounded channel counts.
