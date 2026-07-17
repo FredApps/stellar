@@ -24,6 +24,10 @@ matching section in this file.
 - Extended the Overlord victory celebration with denser fireworks, confetti, staged messages, and
   a six-second input lock; Space is ignored, Enter starts Freeplay, and Esc saves and returns.
 - Kept the red Game Over flash while clearing combat colors and shake before returning to menus.
+- Improved mobile steering with a floating left-thumb joystick, a smaller dead zone, faster response,
+  and relative playfield dragging that no longer jumps when switching control surfaces.
+- Added mobile Replay and Title controls to the high-score table so a finished run never requires a
+  page refresh.
 
 ## v0.1.3 - 2026-07-10
 

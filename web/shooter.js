@@ -620,7 +620,10 @@ function sprites_init() {
 /* ================= input ================= */
 const keyState = {}, keyEdge = {};
 const typedQueue = [];
-const pointerAim = { active:false, x:SCRW >> 1, y:SCRH - 30, id:null };
+const pointerAim = {
+  active:false, x:SCRW >> 1, y:SCRH - 30, id:null,
+  dragX:0, dragY:0, shipX:0, shipY:0
+};
 const KEYMAP = {
   ArrowLeft:'LEFT', ArrowRight:'RIGHT', ArrowUp:'UP', ArrowDown:'DOWN',
   KeyA:'LEFT', KeyD:'RIGHT', KeyW:'UP', KeyS:'DOWN',
@@ -655,6 +658,22 @@ function setPointerAim(e) {
   const p = eventGamePos(e);
   pointerAim.x = p.x;
   pointerAim.y = p.y;
+}
+function beginTouchAim(e) {
+  const p = eventGamePos(e);
+  pointerAim.active = true;
+  pointerAim.id = e.pointerId;
+  pointerAim.dragX = p.x;
+  pointerAim.dragY = p.y;
+  pointerAim.shipX = player.x + (SH_SHIP_W >> 1);
+  pointerAim.shipY = player.y + (SH_SHIP_H >> 1);
+  pointerAim.x = pointerAim.shipX;
+  pointerAim.y = pointerAim.shipY;
+}
+function updateTouchAim(e) {
+  const p = eventGamePos(e);
+  pointerAim.x = Math.max(0, Math.min(SCRW - 1, pointerAim.shipX + p.x - pointerAim.dragX));
+  pointerAim.y = Math.max(0, Math.min(SCRH - 1, pointerAim.shipY + p.y - pointerAim.dragY));
 }
 
 window.addEventListener('keydown', (e) => {
@@ -2173,25 +2192,27 @@ function update_play() {
     const moveRight = key_pressed('RIGHT') || (joyMove && mobileMove.x > 0);
     const moveUp = key_pressed('UP') || (joyMove && mobileMove.y < 0);
     const moveDown = key_pressed('DOWN') || (joyMove && mobileMove.y > 0);
-    if (moveLeft)  { player.x -= sp; ship_bank = 0; }
-    if (moveRight) { player.x += sp; ship_bank = 2; }
-    if (moveUp)    player.y -= sp;
-    if (moveDown)  player.y += sp;
+    const moveSp = joyMove ? sp + 1 : sp;
+    if (moveLeft)  { player.x -= moveSp; ship_bank = 0; }
+    if (moveRight) { player.x += moveSp; ship_bank = 2; }
+    if (moveUp)    player.y -= moveSp;
+    if (moveDown)  player.y += moveSp;
     /* keyboard has priority: using a movement key drops mouse ownership, and
        the mouse only reclaims it by actually moving again (a stationary cursor
        fires no pointermove, so the ship won't snap back to it) */
     if (kbMove) pointerAim.active = false;
     if (pointerAim.active) {
+      const aimSp = mobileMode && pointerAim.id !== null ? sp + 3 : sp;
       const tx = pointerAim.x - (SH_SHIP_W >> 1);
       const ty = pointerAim.y - (SH_SHIP_H >> 1);
       const dx = tx - player.x;
       const dy = ty - player.y;
       if (Math.abs(dx) > 1) {
-        const mx = Math.max(-sp, Math.min(sp, dx));
+        const mx = Math.max(-aimSp, Math.min(aimSp, dx));
         player.x += mx;
         ship_bank = mx < 0 ? 0 : 2;
       }
-      if (Math.abs(dy) > 1) player.y += Math.max(-sp, Math.min(sp, dy));
+      if (Math.abs(dy) > 1) player.y += Math.max(-aimSp, Math.min(aimSp, dy));
     }
     player.x = Math.max(0, Math.min(SCRW - SH_SHIP_W, player.x));
     player.y = Math.max(8, Math.min(SCRH - SH_SHIP_H, player.y));
@@ -2858,7 +2879,7 @@ function draw_scores() {
     text_center(34 + i*12, b, i === 0 ? C_WHITE : C_LCYAN);
   }
   text_center(164, scoreStatus, scoresOnline ? C_LGREEN : C_YELLOW);
-  if (frame & 16) text_center(180, 'SPACE TITLE   CTRL REPLAY', C_LGREEN);
+  if (frame & 16) text_center(180, mobileMode ? 'TITLE OR REPLAY BELOW' : 'SPACE TITLE   CTRL REPLAY', C_LGREEN);
 }
 function draw_entry() {
   text_center(60, 'NEW HIGH SCORE!', C_YELLOW);
@@ -2902,6 +2923,7 @@ function syncHtmlUi(forceFocus) {
     snd_pause(paused || mobileOrientationSuspended);
   }
   document.body.classList.toggle('entry-mode', entering);
+  document.body.classList.toggle('score-mode', state === ST_SCORES);
   document.body.classList.toggle('victory-mode', winning);
   document.body.classList.toggle('help-mode', state === ST_HELP);
   document.body.classList.toggle('mobile-ui', mobileMode);
@@ -3079,6 +3101,7 @@ const wrapEl = document.getElementById('wrap');
 const canvas = document.getElementById('screen');
 const nameInput = document.getElementById('nameInput');
 const joystick = document.getElementById('joystick');
+const joystickBase = document.getElementById('joystickBase');
 const joystickKnob = document.getElementById('joystickKnob');
 const pauseButton = document.getElementById('pauseButton');
 const ctx = canvas.getContext('2d');
@@ -3228,9 +3251,8 @@ canvas.addEventListener('pointerdown', (e) => {
        (and its release is still delivered) */
     try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
   } else {
-    pointerAim.active = true;
-    pointerAim.id = e.pointerId;
-    setPointerAim(e);
+    resetMobileMove();
+    beginTouchAim(e);
     canvas.setPointerCapture(e.pointerId);
   }
   e.preventDefault();
@@ -3242,7 +3264,13 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
   if (pointerAim.active && (pointerAim.id === null || pointerAim.id === e.pointerId)) {
-    setPointerAim(e);
+    updateTouchAim(e);
+    e.preventDefault();
+  }
+});
+canvas.addEventListener('pointerrawupdate', (e) => {
+  if (e.pointerType !== 'mouse' && pointerAim.active && pointerAim.id === e.pointerId) {
+    updateTouchAim(e);
     e.preventDefault();
   }
 });
@@ -3267,9 +3295,21 @@ canvas.addEventListener('pointercancel', (e) => {
   endPointerAim(e);
 });
 
+function placeJoystick(e) {
+  if (!joystick || !joystickBase) return;
+  const zone = joystick.getBoundingClientRect();
+  const base = joystickBase.getBoundingClientRect();
+  const half = base.width * 0.5;
+  const x = Math.max(half + 4, Math.min(zone.width - half - 4, e.clientX - zone.left));
+  const y = Math.max(half + 4, Math.min(zone.height - half - 4, e.clientY - zone.top));
+  joystickBase.style.left = `${x}px`;
+  joystickBase.style.top = `${y}px`;
+  joystickBase.style.bottom = 'auto';
+  joystickBase.style.transform = 'translate(-50%, -50%)';
+}
 function updateJoystick(e) {
-  if (!joystick || mobileMove.pointerId !== e.pointerId) return;
-  const r = joystick.getBoundingClientRect();
+  if (!joystickBase || mobileMove.pointerId !== e.pointerId) return;
+  const r = joystickBase.getBoundingClientRect();
   const radius = r.width * 0.5;
   const limit = radius * 0.58;
   let dx = e.clientX - (r.left + radius);
@@ -3281,7 +3321,7 @@ function updateJoystick(e) {
   }
   const nx = dx / limit;
   const ny = dy / limit;
-  const dead = 0.24;
+  const dead = 0.15;
   mobileMove.x = nx < -dead ? -1 : nx > dead ? 1 : 0;
   mobileMove.y = ny < -dead ? -1 : ny > dead ? 1 : 0;
   if (joystickKnob) {
@@ -3297,6 +3337,9 @@ if (joystick) {
   joystick.addEventListener('pointerdown', (e) => {
     if (!mobileMode || state !== ST_PLAY || mobileMove.active) return;
     bootAudio();
+    pointerAim.active = false;
+    pointerAim.id = null;
+    placeJoystick(e);
     mobileMove.active = true;
     mobileMove.pointerId = e.pointerId;
     try { joystick.setPointerCapture(e.pointerId); } catch (_) {}
@@ -3304,6 +3347,11 @@ if (joystick) {
     e.preventDefault();
   });
   joystick.addEventListener('pointermove', (e) => {
+    if (mobileMove.pointerId !== e.pointerId) return;
+    updateJoystick(e);
+    e.preventDefault();
+  });
+  joystick.addEventListener('pointerrawupdate', (e) => {
     if (mobileMove.pointerId !== e.pointerId) return;
     updateJoystick(e);
     e.preventDefault();
@@ -3339,6 +3387,8 @@ function wireButton(btn) {
     else if (action === 'music') snd_music_toggle();
     else if (action === 'sfx') snd_sfx_toggle();
     else if (action === 'scores') showScores();
+    else if (action === 'title') returnToTitle();
+    else if (action === 'replay') begin_run();
     else if (action === 'freeplay') { if (state === ST_WIN && win_t >= WIN_INPUT_DELAY) continueFreeplay(); }
     else if (action === 'save-title') { if (state === ST_WIN && win_t >= WIN_INPUT_DELAY) finishVictoryRun(); }
     if (entry === 'BKSP') backspaceEntry();
@@ -3371,6 +3421,14 @@ function showScores() {
   if (state === ST_PLAY && !paused) return;
   syncScores();
   state = ST_SCORES;
+}
+function returnToTitle() {
+  clearCombatFx();
+  clearInput();
+  state = ST_TITLE;
+  paused = false;
+  snd_music_set(MUS_TITLE);
+  syncHtmlUi(false);
 }
 /* Reflect current mute state on the side-menu audio buttons. */
 function updateAudioButtons() {

@@ -73,8 +73,8 @@ and a standard 1.44 MB FAT12 floppy image.
 
 The JS/Canvas port lives in `web/` and can be run locally or deployed to any static host.
 It keeps the same 320x200 framebuffer and frame-locked game feel, while adding
-Web Audio, pointer and touch controls, mobile fullscreen controls, and server
-leaderboard sync.
+Web Audio, mouse and relative-drag steering, a floating mobile thumb control,
+mobile fullscreen controls, replay/title score actions, and server leaderboard sync.
 
 ## Quick Start
 
