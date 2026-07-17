@@ -1492,7 +1492,7 @@ static i16 enemy_drop_chance(const Enemy *e)
 {
     if (boss.active && e->drop_class != DROP_NORMAL)
         return (g_diff == DIF_EASY) ? 55 : (g_diff == DIF_HARD) ? 45 : 50;
-    return (g_diff == DIF_EASY) ? 20 : (g_diff == DIF_HARD) ? 14 : 17;
+    return (g_diff == DIF_EASY) ? 18 : (g_diff == DIF_HARD) ? 12 : 15;
 }
 
 /* smart bomb: clear enemy fire and damage everything on screen */
@@ -2531,10 +2531,11 @@ static void draw_help(void)
         text_draw(36,  84, "CTRL MISSILE: BEST VS BOSSES", C_LGRAY);
         text_draw(20, 100, "B BOMB: CLEAR SHOTS + DAMAGE", C_LGRAY);
         text_draw(20, 116, "SHIFT BOOST: SPEED BURST", C_LGRAY);
-        text_draw(20, 132, "FAST KILLS COMBO UP TO X5", C_LGRAY);
-        text_draw(20, 148, "GRAZE SHOTS FOR BONUS POINTS", C_DGRAY);
-        text_draw(20, 162, "CYAN BOX = ELITE ENEMY", C_LCYAN);
-        text_center(182, "SPACE PICKUPS   ESC BACK", C_LCYAN);
+        text_draw(20, 128, "FAST KILLS COMBO UP TO X5", C_LGRAY);
+        text_draw(20, 142, "GRAZE SHOTS FOR BONUS POINTS", C_DGRAY);
+        text_draw(20, 156, "BOX WARNS: TOUGH ELITE ENEMY", C_LCYAN);
+        text_draw(20, 170, "STRONGER ATTACKS + BONUS SCORE", C_WHITE);
+        text_center(188, "SPACE PICKUPS   ESC BACK", C_LCYAN);
     }
 }
 
@@ -3124,6 +3125,31 @@ static int selftest_support_run(void)
     return drops == 1 && boss.drop_budget == 3;
 }
 
+static int selftest_escort_drop_rates_run(void)
+{
+    Enemy ordinary, support;
+    memset(&ordinary, 0, sizeof(ordinary));
+    memset(&support, 0, sizeof(support));
+    ordinary.drop_class = DROP_NORMAL;
+    support.drop_class = DROP_SUPPORT;
+
+    boss.active = FALSE;
+    g_diff = DIF_EASY;
+    if (enemy_drop_chance(&ordinary) != 18 || enemy_drop_chance(&support) != 18) return 0;
+    g_diff = DIF_NORMAL;
+    if (enemy_drop_chance(&ordinary) != 15 || enemy_drop_chance(&support) != 15) return 0;
+    g_diff = DIF_HARD;
+    if (enemy_drop_chance(&ordinary) != 12 || enemy_drop_chance(&support) != 12) return 0;
+
+    boss.active = TRUE;
+    g_diff = DIF_EASY;
+    if (enemy_drop_chance(&ordinary) != 18 || enemy_drop_chance(&support) != 55) return 0;
+    g_diff = DIF_NORMAL;
+    if (enemy_drop_chance(&ordinary) != 15 || enemy_drop_chance(&support) != 50) return 0;
+    g_diff = DIF_HARD;
+    return enemy_drop_chance(&ordinary) == 12 && enemy_drop_chance(&support) == 45;
+}
+
 static int selftest_danger_tells_run(void)
 {
     int i; i16 y;
@@ -3158,6 +3184,7 @@ void game_selftest_logic(void)
     selftest_log(f, "GAME OVER INPUT LOCK", selftest_game_over_input_run());
     selftest_log(f, "WEAPON TIER PATTERNS", selftest_weapon_tiers_run());
     selftest_log(f, "BOSS SUPPORT DROP", selftest_support_run());
+    selftest_log(f, "ESCORT DROP RATES", selftest_escort_drop_rates_run());
     selftest_log(f, "DANGEROUS MOVE TELLS", selftest_danger_tells_run());
     for (kind = 0; kind < NBOSS; kind++)
         for (phase = 0; phase < 3; phase++) {

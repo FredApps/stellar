@@ -15,8 +15,10 @@ matching section in this file.
   Laser, Wave, and Cannon in the help screen and pickup feedback.
 - Boss support squads now identify a supply escort with a guaranteed upgrade drop; remaining escorts
   have higher difficulty-scaled drop odds while the four-drop encounter cap remains in place.
-- Game Over now ignores Space so held fire cannot skip the result screen, and help identifies the
-  blinking cyan/white enemy frame as the elite marker.
+- Game Over now ignores Space so held fire cannot skip the result screen, and help explains that
+  boxed elites are tougher, use stronger attacks, and award bonus score.
+- Restored ordinary-enemy upgrade drops to Easy 18%, Normal 15%, and Hard 12%; increased drop odds
+  remain exclusive to support escorts spawned during boss battles.
 
 ## v0.1.3 - 2026-07-10
 

@@ -2000,7 +2000,7 @@ function choose_powerup() {
 function enemy_drop_chance(e) {
   if (boss.active && e.drop_class !== DROP_NORMAL)
     return g_diff === DIF_EASY ? 55 : g_diff === DIF_HARD ? 45 : 50;
-  return g_diff === DIF_EASY ? 20 : g_diff === DIF_HARD ? 14 : 17;
+  return g_diff === DIF_EASY ? 18 : g_diff === DIF_HARD ? 12 : 15;
 }
 function apply_boss_damage(dmg) {
   if (!boss.active || boss.die_t > 0) return;
@@ -2772,10 +2772,11 @@ function draw_help() {
     text_draw(36, 84,  'CTRL MISSILE: BEST VS BOSSES', C_LGRAY);
     text_draw(20, 100, 'B BOMB: CLEAR SHOTS + DAMAGE', C_LGRAY);
     text_draw(20, 116, 'SHIFT BOOST: SPEED BURST', C_LGRAY);
-    text_draw(20, 132, 'FAST KILLS COMBO UP TO X5', C_LGRAY);
-    text_draw(20, 148, 'GRAZE SHOTS FOR BONUS POINTS', C_DGRAY);
-    text_draw(20, 162, 'CYAN BOX = ELITE ENEMY', C_LCYAN);
-    text_center(182, 'SPACE PICKUPS   ESC BACK', C_LCYAN);
+    text_draw(20, 128, 'FAST KILLS COMBO UP TO X5', C_LGRAY);
+    text_draw(20, 142, 'GRAZE SHOTS FOR BONUS POINTS', C_DGRAY);
+    text_draw(20, 156, 'BOX WARNS: TOUGH ELITE ENEMY', C_LCYAN);
+    text_draw(20, 170, 'STRONGER ATTACKS + BONUS SCORE', C_WHITE);
+    text_center(188, 'SPACE PICKUPS   ESC BACK', C_LCYAN);
   }
 }
 function draw_scores() {
