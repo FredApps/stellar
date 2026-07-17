@@ -65,8 +65,9 @@ GAMEPLAY
   drops during one boss encounter.
   The soundtrack changes after every boss.
   Defeating the W60 Overlord opens an animated campaign-complete screen.
-  Choose Freeplay or save the score and return. Freeplay boss health no
-  longer grows beyond the W60 durability level.
+  After the six-second celebration, Enter starts Freeplay and Esc saves
+  the score and returns. Space is ignored so held fire cannot skip it.
+  Freeplay boss health no longer grows beyond the W60 durability level.
 
 WEAPONS
       Cannon  - all-round spread, damage 1

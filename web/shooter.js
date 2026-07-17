@@ -39,6 +39,7 @@ const SH_SHIP_W=16, SH_SHIP_H=16, SH_EN_W=16, SH_EN_H=14,
 
 const BOOST_MAX=140, BOOST_MIN_START=12, BOOST_DRAIN=2,
       BOOST_RECHARGE=1, BOOST_RECHARGE_CD=25;
+const WIN_INPUT_DELAY=210;
 
 const SFX_FIRE=0, SFX_EXPLODE=1, SFX_POWER=2, SFX_HIT=3, SFX_BOSS=4,
       SFX_MISSILE=5, SFX_PICK1=6, SFX_PICK2=7, SFX_COMBO=8, SFX_PHASE=9,
@@ -2729,20 +2730,25 @@ function draw_win() {
     const half=88-Math.floor(i*i/9);
     if(half>0) vga_hline(160-half,174+i,half*2,PAL_NEB+5+(i>>2));
   }
-  for (let i=0;i<5;i++) {
-    const fx=34+((win_t*(i+3)+i*57)%252), fy=28+((i*31)%92), r=(win_t+i*11)&15;
-    if(r<8){vga_hline(fx-r,fy,r*2+1,(i&1)?C_YELLOW:C_LCYAN);vga_pixel(fx,fy-r,(i&1)?C_YELLOW:C_LCYAN);vga_pixel(fx,fy+r,(i&1)?C_YELLOW:C_LCYAN);}
+  for (let i=0;i<8;i++) {
+    const fx=34+((win_t*(i+3)+i*57)%252), fy=30+((i*37)%82), r=(win_t*2+i*9)&15;
+    const c=i%3===0?C_YELLOW:(i&1)?C_LCYAN:C_LMAG;
+    if(r<8){vga_hline(fx-r,fy,r*2+1,c);vga_pixel(fx,fy-r,c);vga_pixel(fx,fy+r,c);}
   }
+  for(let i=0;i<18;i++) vga_rect((i*53+win_t*(1+i%3))%SCRW,(i*29+win_t*2)%154,(i&1)?2:1,2,
+                                  i%3===0?C_YELLOW:(i&1)?C_LCYAN:C_LMAG);
   vga_sprite(fly,126,SH_SHIP_W,SH_SHIP_H,spr_ship[2]);
   vga_sprite(fly-28,138,SH_SHIP_W,SH_SHIP_H,spr_ship[1]);
   vga_sprite(fly-56,126,SH_SHIP_W,SH_SHIP_H,spr_ship[0]);
   for(let i=0;i<8;i++) vga_rect(136+((i*37+win_t)%50),54+((i*19+(win_t>>1))%38),2+(i&2),2,(i&1)?C_LRED:C_DGRAY);
-  text_center(18,'CAMPAIGN COMPLETE',C_YELLOW);
-  text_center(38,win_t<90?'OVERLORD DESTROYED':'THE SECTOR IS FREE',C_WHITE);
-  text_center(92,'SCORE '+pad6(score)+'  COMBO X'+player.max_combo,C_LGREEN);
-  text_center(106,'BOSSES DEFEATED '+bosses_defeated,C_LCYAN);
-  if(win_t>=90){if(frame&16)text_center(152,'SPACE FREEPLAY',C_WHITE);text_center(166,'ESC SAVE + TITLE',C_LGRAY);}
-  else text_center(152,'VICTORY',C_LMAG);
+  vga_frame(50,4,220,52,frame&4?C_YELLOW:C_WHITE);
+  text_center(10,'*** VICTORY ***',frame&8?C_YELLOW:C_WHITE);
+  text_center(26,'CAMPAIGN COMPLETE',C_YELLOW);
+  text_center(42,win_t<70?'OVERLORD DESTROYED':'THE SECTOR IS FREE',C_WHITE);
+  text_center(90,'SCORE '+pad6(score)+'  COMBO X'+player.max_combo,C_LGREEN);
+  text_center(106,bosses_defeated+' / '+NBOSS+' BOSSES DEFEATED',C_LCYAN);
+  if(win_t>=WIN_INPUT_DELAY){if(frame&16)text_center(152,'ENTER FREEPLAY',C_WHITE);text_center(166,'ESC SAVE + TITLE',C_LGRAY);}
+  else text_center(156,win_t<70?'THREAT ELIMINATED':win_t<140?'FLEET SALUTE':'VICTORY CONFIRMED',C_LMAG);
 }
 function help_row(y, pu, txt) {
   vga_sprite(20, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
@@ -2881,7 +2887,7 @@ function syncHtmlUi(forceFocus) {
   const stateChanged = uiState !== state;
   const entering = state === ST_ENTRY;
   const playing = state === ST_PLAY;
-  const winning = state === ST_WIN && win_t >= 90;
+  const winning = state === ST_WIN && win_t >= WIN_INPUT_DELAY;
   const portraitBlocked = isPortraitMobile();
   const suspendForOrientation = playing && portraitBlocked;
   const showLaunch = mobileMode && !mobileLaunchDismissed && !fullscreenElement();
@@ -2952,6 +2958,12 @@ function finishVictoryRun() {
   if (entry_rank >= 0) enterHighScoreEntry(false);
   else { state = ST_SCORES; syncHtmlUi(false); }
 }
+function clearCombatFx() { flash = shk = shx = shy = 0; }
+function winFreeplayRequested() {
+  const enter = key_hit('ENTER');
+  key_hit('SPACE');                    // held fire never skips victory
+  return win_t >= WIN_INPUT_DELAY && enter;
+}
 function continueFreeplay() {
   win_pending = 0; finish_wave(); start_wave();
   state = ST_PLAY; paused = false; snd_music_game(bosses_defeated); clearInput(); syncHtmlUi(false);
@@ -2991,6 +3003,7 @@ function step() {
       remember_run();
       snd_music_set(MUS_WIN);
       state = ST_WIN; win_t = 0;
+      clearCombatFx();
       clearInput();
       break;
     }
@@ -3010,6 +3023,7 @@ function step() {
   case ST_OVER:
     if (over_timer > 0) over_timer--;
     if ((over_timer <= 130 && key_hit('ENTER')) || over_timer === 0) {
+      clearCombatFx();
       entry_rank = hi_qualifies(score);
       if (entry_rank >= 0) enterHighScoreEntry(true);
       else state = ST_SCORES;
@@ -3031,9 +3045,10 @@ function step() {
     break;
   case ST_WIN:
     win_t++;
-    if (win_t < 90 && win_t % 24 === 0) snd_sfx(SFX_PHASE);
-    if (win_t >= 90 && key_hit('ESC')) { finishVictoryRun(); clearInput(); }
-    if (win_t >= 90 && (key_hit('SPACE') || key_hit('ENTER') || key_hit('CTRL'))) continueFreeplay();
+    { const save = key_hit('ESC'), freeplay = winFreeplayRequested();
+      if (win_t < WIN_INPUT_DELAY && win_t % 28 === 0) snd_sfx(SFX_PHASE);
+      if (win_t >= WIN_INPUT_DELAY && save) { finishVictoryRun(); clearInput(); }
+      else if (freeplay) continueFreeplay(); }
     break;
   }
 
@@ -3324,8 +3339,8 @@ function wireButton(btn) {
     else if (action === 'music') snd_music_toggle();
     else if (action === 'sfx') snd_sfx_toggle();
     else if (action === 'scores') showScores();
-    else if (action === 'freeplay') { if (state === ST_WIN && win_t >= 90) continueFreeplay(); }
-    else if (action === 'save-title') { if (state === ST_WIN && win_t >= 90) finishVictoryRun(); }
+    else if (action === 'freeplay') { if (state === ST_WIN && win_t >= WIN_INPUT_DELAY) continueFreeplay(); }
+    else if (action === 'save-title') { if (state === ST_WIN && win_t >= WIN_INPUT_DELAY) finishVictoryRun(); }
     if (entry === 'BKSP') backspaceEntry();
     if (entry === 'ENTER') submitEntry(false);
     btn.setPointerCapture(e.pointerId);
@@ -3411,7 +3426,7 @@ gen_nebula();
 snd_music_set(MUS_TITLE);
 if (urlParams.get('shot') === 'win') {
   score = 987650; player.max_combo = 42; bosses_defeated = 15;
-  state = ST_WIN; win_t = 140; mobileLaunchDismissed = true; snd_music_set(MUS_WIN);
+  state = ST_WIN; win_t = WIN_INPUT_DELAY + 30; mobileLaunchDismissed = true; snd_music_set(MUS_WIN);
 } else if (urlParams.get('shot') === 'entry') {
   score = 987650; entry_rank = 0; mobileLaunchDismissed = true; enterHighScoreEntry(false);
 }

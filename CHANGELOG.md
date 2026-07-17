@@ -21,6 +21,9 @@ matching section in this file.
   remain exclusive to support escorts spawned during boss battles.
 - Expanded Help into six readable pages covering controls, pickups, weapons, survival, enemies,
   bosses, scoring, and difficulty; Up/Down arrows and mobile side controls scroll the manual.
+- Extended the Overlord victory celebration with denser fireworks, confetti, staged messages, and
+  a six-second input lock; Space is ignored, Enter starts Freeplay, and Esc saves and returns.
+- Kept the red Game Over flash while clearing combat colors and shake before returning to menus.
 
 ## v0.1.3 - 2026-07-10
 

@@ -122,6 +122,7 @@ static u16  rng = 0x1234;
 #define BOOST_DRAIN       2
 #define BOOST_RECHARGE    1
 #define BOOST_RECHARGE_CD 25
+#define WIN_INPUT_DELAY  210
 
 /* forward declarations */
 static void kill_enemy(Enemy *e);
@@ -2437,6 +2438,18 @@ static bool game_over_continue_requested(void)
     return (over_timer <= 130 && key_hit(SC_ENTER)) || over_timer == 0;
 }
 
+static void clear_combat_fx(void)
+{
+    flash = shk = shx = shy = 0;
+}
+
+static bool win_freeplay_requested(void)
+{
+    bool enter = key_hit(SC_ENTER);
+    key_hit(SC_SPACE);                   /* held fire never skips victory */
+    return (win_t >= WIN_INPUT_DELAY && enter) ? TRUE : FALSE;
+}
+
 static void draw_over(void)
 {
     char b[40];
@@ -2461,15 +2474,21 @@ static void draw_win(void)
         if (half > 0) vga_hline((i16)(160 - half), (i16)(174 + i), (i16)(half * 2),
                                 (u8)(PAL_NEB + 5 + (i >> 2)));
     }
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 8; i++) {
         i16 fx = (i16)(34 + ((win_t * (i + 3) + i * 57) % 252));
-        i16 fy = (i16)(28 + ((i * 31) % 92));
-        i16 r = (i16)((win_t + i * 11) & 15);
+        i16 fy = (i16)(30 + ((i * 37) % 82));
+        i16 r = (i16)((win_t * 2 + i * 9) & 15);
         if (r < 8) {
-            vga_hline((i16)(fx - r), fy, (i16)(r * 2 + 1), (i & 1) ? C_YELLOW : C_LCYAN);
-            vga_hline(fx, (i16)(fy - r), 1, (i & 1) ? C_YELLOW : C_LCYAN);
-            vga_hline(fx, (i16)(fy + r), 1, (i & 1) ? C_YELLOW : C_LCYAN);
+            u8 c = (i % 3 == 0) ? C_YELLOW : (i & 1) ? C_LCYAN : C_LMAG;
+            vga_hline((i16)(fx - r), fy, (i16)(r * 2 + 1), c);
+            vga_pixel(fx, (i16)(fy - r), c); vga_pixel(fx, (i16)(fy + r), c);
         }
+    }
+    for (i = 0; i < 18; i++) {
+        i16 cx = (i16)((i * 53 + win_t * (1 + i % 3)) % SCRW);
+        i16 cy = (i16)((i * 29 + win_t * 2) % 154);
+        vga_rect(cx, cy, (i & 1) ? 2 : 1, 2,
+                 (i % 3 == 0) ? C_YELLOW : (i & 1) ? C_LCYAN : C_LMAG);
     }
     vga_sprite(fly, 126, SH_SHIP_W, SH_SHIP_H, spr_ship[2]);
     vga_sprite((i16)(fly - 28), 138, SH_SHIP_W, SH_SHIP_H, spr_ship[1]);
@@ -2479,16 +2498,21 @@ static void draw_win(void)
         i16 dy = (i16)(54 + ((i * 19 + win_t / 2) % 38));
         vga_rect(dx, dy, (i16)(2 + (i & 2)), 2, (i & 1) ? C_LRED : C_DGRAY);
     }
-    text_center(18, "CAMPAIGN COMPLETE", C_YELLOW);
-    text_center(38, (win_t < 90) ? "OVERLORD DESTROYED" : "THE SECTOR IS FREE", C_WHITE);
+    vga_frame(50, 4, 220, 52, (frame & 4) ? C_YELLOW : C_WHITE);
+    text_center(10, "*** VICTORY ***", (frame & 8) ? C_YELLOW : C_WHITE);
+    text_center(26, "CAMPAIGN COMPLETE", C_YELLOW);
+    text_center(42, (win_t < 70) ? "OVERLORD DESTROYED" : "THE SECTOR IS FREE", C_WHITE);
     sprintf(b, "SCORE %06lu  COMBO x%d", score, player.max_combo);
-    text_center(92, b, C_LGREEN);
-    sprintf(b, "BOSSES DEFEATED %d", bosses_defeated);
+    text_center(90, b, C_LGREEN);
+    sprintf(b, "%d / %d BOSSES DEFEATED", bosses_defeated, NBOSS);
     text_center(106, b, C_LCYAN);
-    if (win_t >= 90) {
-        if (frame & 16) text_center(152, "SPACE FREEPLAY", C_WHITE);
+    if (win_t >= WIN_INPUT_DELAY) {
+        if (frame & 16) text_center(152, "ENTER FREEPLAY", C_WHITE);
         text_center(166, "ESC SAVE + TITLE", C_LGRAY);
-    } else text_center(152, "VICTORY", C_LMAG);
+    } else {
+        text_center(156, (win_t < 70) ? "THREAT ELIMINATED"
+                    : (win_t < 140) ? "FLEET SALUTE" : "VICTORY CONFIRMED", C_LMAG);
+    }
 }
 
 /* ---------------- instruction menu ---------------- */
@@ -2719,10 +2743,12 @@ void game_run(void)
                 remember_run();
                 snd_music_set(MUS_WIN);
                 state = ST_WIN; win_t = 0;
+                clear_combat_fx();
                 kbd_clear();
                 break;
             }
-            if (key_hit(SC_ESC)) { state = ST_TITLE; snd_music_set(MUS_TITLE); kbd_clear(); }
+            if (key_hit(SC_ESC)) { state = ST_TITLE; snd_music_set(MUS_TITLE);
+                                   clear_combat_fx(); kbd_clear(); }
             if (!player.alive) {
                 remember_run();
                 snd_music_set(MUS_TITLE);
@@ -2735,6 +2761,7 @@ void game_run(void)
         case ST_OVER:
             if (over_timer > 0) over_timer--;
             if (game_over_continue_requested()) {
+                clear_combat_fx();
                 entry_rank = hi_qualifies(score);
                 if (entry_rank >= 0) {
                     strcpy(name, pilot_name); nlen = (int)strlen(name);
@@ -2771,10 +2798,13 @@ void game_run(void)
             if (key_hit(SC_CTRL)) { reset_game(); start_wave(); state = ST_PLAY; paused = FALSE;
                                     snd_music_game(0); }
             break;
-        case ST_WIN:
+        case ST_WIN: {
+            bool save = key_hit(SC_ESC);
+            bool freeplay;
             win_t++;
-            if (win_t < 90 && win_t % 24 == 0) snd_sfx(SFX_PHASE);
-            if (win_t >= 90 && key_hit(SC_ESC)) {
+            freeplay = win_freeplay_requested();
+            if (win_t < WIN_INPUT_DELAY && win_t % 28 == 0) snd_sfx(SFX_PHASE);
+            if (win_t >= WIN_INPUT_DELAY && save) {
                 finish_wave(); entry_rank = hi_qualifies(score); snd_music_set(MUS_TITLE);
                 if (entry_rank >= 0) {
                     strcpy(name, pilot_name); nlen = (int)strlen(name);
@@ -2782,7 +2812,7 @@ void game_run(void)
                 } else state = ST_SCORES;
                 kbd_clear();
             }
-            if (win_t >= 90 && (key_hit(SC_SPACE) || key_hit(SC_ENTER) || key_hit(SC_CTRL))) {
+            else if (freeplay) {
                 win_pending = 0;
                 finish_wave();
                 start_wave();
@@ -2790,7 +2820,7 @@ void game_run(void)
                 snd_music_game((u8)bosses_defeated);
                 kbd_clear();
             }
-            break;
+            break; }
         }
 
         /* keep music/sfx running every frame regardless of what we draw */
@@ -3043,7 +3073,8 @@ void game_selftest_win(const char *bmp)
 {
     reset_game();
     init_stars(); init_dust(); gen_nebula();
-    score = 987650; player.max_combo = 42; bosses_defeated = 15; win_t = 140;
+    score = 987650; player.max_combo = 42; bosses_defeated = 15;
+    win_t = WIN_INPUT_DELAY + 30;
     vga_bg_blit(0); draw_stars(); draw_dust(); draw_win();
     bmp_dump(bmp);
 }
@@ -3195,6 +3226,15 @@ static int selftest_game_over_input_run(void)
     return game_over_continue_requested() ? 1 : 0;
 }
 
+static int selftest_victory_input_run(void)
+{
+    win_t = WIN_INPUT_DELAY + 1;
+    g_edge[SC_SPACE] = 1; g_edge[SC_ENTER] = 0;
+    if (win_freeplay_requested()) return 0;
+    g_edge[SC_ENTER] = 1;
+    return win_freeplay_requested() ? 1 : 0;
+}
+
 static i16 active_player_bullets(u8 kind)
 {
     int i; i16 n = 0;
@@ -3297,6 +3337,7 @@ void game_selftest_logic(void)
     selftest_log(f, "SHIELD RAM", selftest_shield_ram_run());
     selftest_log(f, "ADAPTIVE DROPS", selftest_drop_policy_run());
     selftest_log(f, "GAME OVER INPUT LOCK", selftest_game_over_input_run());
+    selftest_log(f, "VICTORY INPUT LOCK", selftest_victory_input_run());
     selftest_log(f, "WEAPON TIER PATTERNS", selftest_weapon_tiers_run());
     selftest_log(f, "BOSS SUPPORT DROP", selftest_support_run());
     selftest_log(f, "ESCORT DROP RATES", selftest_escort_drop_rates_run());

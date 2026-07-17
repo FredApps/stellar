@@ -2,7 +2,7 @@
 
 Stellar is a vertically scrolling VGA space shooter for period PC hardware:
 an Intel 486, MS-DOS, VGA mode 13h, and a PC speaker. It is written in C for
-16-bit real mode with Open Watcom. The current DOS executable is 130,634 bytes;
+16-bit real mode with Open Watcom. The current DOS executable is 131,020 bytes;
 the release floppy image is exactly 1,474,560 bytes, the standard 1.44 MB FAT12
 floppy size. The browser port is included in `web/` for local or self-hosted deployment.
 
@@ -67,7 +67,7 @@ and a standard 1.44 MB FAT12 floppy image.
 | OS | MS-DOS 3.3 or later, Windows 9x DOS mode, FreeDOS, or DOSBox-X |
 | Video | VGA mode 13h compatible adapter |
 | Sound | PC speaker optional |
-| Storage | `STELLAR.EXE` is 130,634 bytes; release floppy image is exactly 1.44 MB |
+| Storage | `STELLAR.EXE` is 131,020 bytes; release floppy image is exactly 1.44 MB |
 
 ## Browser Port
 

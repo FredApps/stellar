@@ -114,9 +114,10 @@ silhouette, movement language, and attack script:
 | W60 | Overlord | Finale: figure-eight, then Phantom blinks, then Seeker orbit + Reaper dives |
 
 The opening sector and each of the fifteen post-boss sectors have distinct music. The W60 Overlord
-ends the campaign with an animated campaign-complete scene and custom win theme. Saving and returning
-finalizes the score; Freeplay continues the run. Freeplay boss HP is capped at the wave-60 durability
-level while attack and support pressure continue.
+ends the campaign with an animated campaign-complete scene and custom win theme. The celebration
+runs for six seconds before accepting a choice so held fire cannot skip it: Enter starts Freeplay,
+while Esc saves and returns. Freeplay boss HP is capped at the wave-60 durability level while attack
+and support pressure continue.
 
 Bosses call bounded support groups, with Leviathan and Kraken launching larger carrier squads.
 The marked supply escort in each squad guarantees an upgrade when destroyed; the remaining escorts
