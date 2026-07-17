@@ -3,8 +3,8 @@
 
 CC   = wcc
 # -bt=dos  target DOS   -ms/-mc memory model   -4 486 scheduling
-# -ot optimise for time  -s no stack checks   -zq quiet   -oi inline
-CFLAGS = -bt=dos -mc -4 -ot -s -zq -oi -zp1 -Isrc
+# -os optimise for size  -s no stack checks   -zq quiet   -oi intrinsics
+CFLAGS = -bt=dos -mc -4 -os -s -zq -oi -zp1 -Isrc
 
 OBJS = main.obj game.obj vga.obj input.obj sound.obj sprites.obj hiscore.obj bmpdump.obj
 

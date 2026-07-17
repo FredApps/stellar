@@ -59,6 +59,9 @@ static struct {
     i16  spin;              /* rotating-spiral angle (sintab index)    */
     i16  launch_t;           /* carrier squad-launch countdown               */
     u8   squads;             /* squads launched this phase (bay throttle)    */
+    i16  support_t;          /* non-carrier support-wave countdown            */
+    u8   drop_budget;        /* random support drops remaining this encounter */
+    i16  recent_dmg;         /* bright health-bar damage segment              */
     i16  hurt_t;             /* white hit-flash frames                       */
     i16  dive_t;             /* dive/lunge/telegraph sub-timer               */
     i16  px[2], py[2];       /* pod anchors (NEXUS) / scratch per-boss state */
@@ -97,6 +100,9 @@ static i16  risk_spawned;
 static i16  bosses_defeated, last_wave, last_combo, last_bosses;
 static u8   ship_bank;        /* 0 left, 1 straight, 2 right */
 static u8   campaign_won, win_pending;
+static i16  win_t;
+static char pilot_name[NAME_LEN + 1];
+static u8   entry_name_error;
 
 /* integer sine table, one full period, amplitude +-46 (no FPU needed) */
 static const i16 sintab[64] = {
@@ -124,6 +130,7 @@ static void set_msg(const char *s);
 static void summon_escort(void);
 static void apply_boss_damage(i16 dmg);
 static void spawn_popup(i16 x, i16 y, const char *s);
+static u8 choose_powerup(void);
 
 /* ---------------- helpers ---------------- */
 static u16 rnd(void)
@@ -147,6 +154,13 @@ static void set_msg(const char *s)
     strncpy(msg_text, s, sizeof(msg_text) - 1);
     msg_text[sizeof(msg_text) - 1] = 0;
     msg_timer = 120;
+}
+
+static const char *weapon_name(u8 type)
+{
+    if (type == WT_LASER) return "LASER";
+    if (type == WT_WAVE) return "WAVE";
+    return "CANNON";
 }
 
 static u32 score_scaled(u32 raw)
@@ -226,6 +240,20 @@ static i16 boss_pct_damage(i16 div)
 {
     i16 d = (i16)((boss.maxhp + div - 1) / div);
     return (d < 1) ? 1 : d;
+}
+
+static i16 boss_health_for(i16 w, i16 kind)
+{
+    i16 hp_wave = (w > 60) ? 60 : w;
+    i16 hp_index = (w > 60) ? 14 : (i16)(w / 4 - 1);
+    if (hp_index < 0) hp_index = 0;
+    return (i16)(36 + hp_wave * diff_boss_hp_mul() + hp_index * 8
+                 + BOSSDEF[kind].hpbonus);
+}
+
+static bool shooter_lingering(const Enemy *e)
+{
+    return (e->y > 40 && e->y < 120 && e->t < 140) ? TRUE : FALSE;
 }
 
 static u32 enemy_score(const Enemy *e)
@@ -362,11 +390,11 @@ static void reset_game(void)
     player.invuln = 0; player.firecd = 0; player.rapid = 0; player.wave_boost = 0;
     player.boost = BOOST_MAX; player.boost_cd = 0; player.boosting = FALSE;
     player.facing_down = FALSE;
-    player.combo = 0; player.combo_t = 0; player.max_combo = 0; player.alive = TRUE;
+    player.combo = 0; player.combo_t = 0; player.max_combo = 0; player.ram_cd = 0; player.alive = TRUE;
     score = 0; wave = 0; flash = 0; shk = 0;
     wave_banner = 0; msg_timer = 0; msg_text[0] = 0; ship_bank = 1;
     wave_kills = wave_missed = wave_hit = combo_broken = 0;
-    risk_spawned = 0; bosses_defeated = 0; campaign_won = 0; win_pending = 0;
+    risk_spawned = 0; bosses_defeated = 0; campaign_won = 0; win_pending = 0; win_t = 0;
     to_spawn = 0; spawn_cd = 30; last_death_score = 0;
 }
 
@@ -435,12 +463,12 @@ static void start_wave(void)
         boss.phase = 0; boss.last_phase = 0; boss.summons = 0;
         boss.atk = 0; boss.atk_t = boss_atk_time(); boss.spin = 0;
         boss.x = SCRW / 2 - boss.w / 2; boss.y = -boss.h;
-        boss.maxhp = boss.hp = (i16)(36 + wave * diff_boss_hp_mul()
-                                     + boss_index * 8 + bd->hpbonus);
+        boss.maxhp = boss.hp = boss_health_for(wave, boss.kind);
         if (boss.maxhp < 20) boss.maxhp = boss.hp = 20;
         boss.dir = 1; boss.t = 0; boss.firecd = 60; boss.charge = 0;
         boss.tx = boss.x; boss.ty = 0; boss.mv_t = 50;
         boss.launch_t = 90; boss.squads = 0;
+        boss.support_t = 260; boss.drop_budget = 4; boss.recent_dmg = 0;
         boss.hurt_t = 0; boss.dive_t = 0; boss.die_t = 0;
         boss.px[0] = boss.px[1] = boss.py[0] = boss.py[1] = 0;
         boss.warn = 70;                     /* WARNING banner before the entrance */
@@ -480,7 +508,7 @@ static void init_enemy(Enemy *e, u8 type, i16 x)
         if (g_diff == DIF_HARD) elite_chance += 5;
         e->elite = (wave >= 7 && (rnd() % 100) < elite_chance) ? 1 : 0;
     }
-    e->mode = 0; e->aux = 0;
+    e->mode = 0; e->drop_class = DROP_NORMAL; e->aux = 0;
     if (type == E_SCOUT)   { e->hp = 1; e->vy += 1; }
     if (type == E_WEAVER)  { e->hp = 2; }
     if (type == E_SHOOTER) { e->hp = 3; if (rnd() % 100 < 35) { e->mode = 1; e->aux = (rnd() & 1) ? 1 : -1; } }
@@ -491,7 +519,7 @@ static void init_enemy(Enemy *e, u8 type, i16 x)
     }
 }
 
-static bool spawn_one(u8 type, i16 x, i16 y, u8 mode)
+static Enemy *spawn_one(u8 type, i16 x, i16 y, u8 mode)
 {
     int i;
     if (x < 4) x = 4;
@@ -500,9 +528,9 @@ static bool spawn_one(u8 type, i16 x, i16 y, u8 mode)
         init_enemy(&enemy[i], type, x);
         enemy[i].y = y;
         enemy[i].mode = mode;
-        return TRUE;
+        return &enemy[i];
     }
-    return FALSE;
+    return 0;
 }
 
 static i16 free_enemy_slots(void)
@@ -512,32 +540,43 @@ static i16 free_enemy_slots(void)
     return n;
 }
 
+static i16 active_enemy_count(void)
+{
+    int i; i16 n = 0;
+    for (i = 0; i < MAX_ENEMY; i++) if (enemy[i].active) n++;
+    return n;
+}
+
 static void summon_escort(void)
 {
     int n;
+    i16 size = (i16)(2 + (boss.phase >= 1 ? 1 : 0));
     u8 type = (boss.kind == 3 || boss.kind == 11) ? E_WEAVER : E_SCOUT;
     i16 x0 = (boss.x < 80) ? boss.x + 36 : boss.x - 28;
-    for (n = 0; n < 3; n++) {
-        spawn_one(type, x0 + n * 20, -SH_EN_H - n * 12, 0);
+    if (active_enemy_count() >= 6 || free_enemy_slots() < size) return;
+    for (n = 0; n < size; n++) {
+        Enemy *e = spawn_one(type, x0 + n * 20, -SH_EN_H - n * 12, 0);
+        if (e) e->drop_class = (n == 0) ? DROP_SUPPLY : DROP_SUPPORT;
     }
-    set_msg("ESCORTS INBOUND");
+    set_msg("SUPPLY ESCORTS");
 }
 
 /* carrier: launch a fighter squad from the two hangar bays, but only if the
    shared enemy[] pool has room for the whole squad (never partial/overflow). */
 static void launch_squad(void)
 {
-    i16 size = (i16)(2 + (boss.phase >= 1 ? 1 : 0));
+    i16 size = (i16)(3 + (boss.phase >= 1 ? 1 : 0));
     i16 lx = boss.x + 6;
     i16 rx = boss.x + boss.w - 6 - SH_EN_W;
     int n;
-    if (free_enemy_slots() < size) return;
+    if (active_enemy_count() >= 6 || free_enemy_slots() < size) return;
     for (n = 0; n < size; n++) {
         i16 bx = (n & 1) ? rx : lx;
-        spawn_one(E_SCOUT, bx, -SH_EN_H - n * 10, 0);
+        Enemy *e = spawn_one(E_SCOUT, bx, -SH_EN_H - n * 10, 0);
+        if (e) e->drop_class = (n == 0) ? DROP_SUPPLY : DROP_SUPPORT;
     }
     boss.squads++;
-    set_msg("FIGHTERS LAUNCHED");
+    set_msg("SUPPLY FIGHTERS");
 }
 
 /* spawn one drip, or occasionally a whole formation (counts as several) */
@@ -620,9 +659,18 @@ static void player_fire(void)
     i16 cd;
     switch (player.wtype) {
     case WT_LASER:                                /* fast, straight, pierces */
-        add_pbullet(cx, cy + dir * 2, 0, dir * 12, WT_LASER);
-        if (g >= 3) { add_pbullet(cx - 6, cy, 0, dir * 12, WT_LASER);
-                      add_pbullet(cx + 6, cy, 0, dir * 12, WT_LASER); }
+        switch (g) {
+        case 1:  add_pbullet(cx, cy + dir * 2, 0, dir * 12, WT_LASER); break;
+        case 2:  add_pbullet(cx - 4, cy, 0, dir * 12, WT_LASER);
+                 add_pbullet(cx + 4, cy, 0, dir * 12, WT_LASER); break;
+        case 3:  add_pbullet(cx - 7, cy, 0, dir * 12, WT_LASER);
+                 add_pbullet(cx, cy + dir * 2, 0, dir * 12, WT_LASER);
+                 add_pbullet(cx + 7, cy, 0, dir * 12, WT_LASER); break;
+        default: add_pbullet(cx - 10, cy, 0, dir * 12, WT_LASER);
+                 add_pbullet(cx - 4, cy + dir * 2, 0, dir * 12, WT_LASER);
+                 add_pbullet(cx + 4, cy + dir * 2, 0, dir * 12, WT_LASER);
+                 add_pbullet(cx + 10, cy, 0, dir * 12, WT_LASER); break;
+        }
         cd = 7;
         break;
     case WT_WAVE: {
@@ -952,6 +1000,8 @@ static void move_toward(i16 *v, i16 target, i16 step)
     else if (*v > target) { *v -= step; if (*v < target) *v = target; }
 }
 
+static i16 danger_speed(void) { return (g_diff == DIF_EASY) ? 3 : 4; }
+
 /* Per-boss bottom of the movement envelope. Divers and slammers are allowed
    deep into the dodge zone (with telegraphs); hoverers stay high. Never above
    156 so the bottom rows always stay survivable. */
@@ -1006,22 +1056,24 @@ static void boss_move(void)
             boss.y = (i16)(18 + (sintab[boss.t & 63] + 46) / 30);
             move_toward(&boss.x, boss.tx, 2);
             if (--boss.mv_t <= 0) {
-                boss.ty = 1; boss.charge = 20;
+                boss.ty = 1; boss.charge = 24; boss.dive_t = 24;
                 boss.tx = (i16)(player.x + 8 - boss.w / 2);
-                boss.dive_t = (i16)((boss.phase >= 2) ? 2 : 1);   /* chained dives */
+                boss.py[0] = (i16)((boss.phase >= 2) ? 2 : 1);   /* chained dives */
             }
-        } else if (boss.ty == 1) {            /* dive deep, afterimage trail */
-            move_toward(&boss.x, boss.tx, 4);
-            boss.y += 5;
+        } else if (boss.ty == 1) {            /* hold on the marked dive lane */
+            if (--boss.dive_t <= 0) boss.ty = 2;
+        } else if (boss.ty == 2) {            /* dive deep, afterimage trail */
+            move_toward(&boss.x, boss.tx, danger_speed());
+            boss.y += danger_speed();
             if (frame & 1) spawn_part((i16)(boss.x + boss.w / 2), boss.y, C_LRED);
-            if (boss.y >= 150) boss.ty = 2;
+            if (boss.y >= 150) boss.ty = 3;
         } else {                              /* strafing arc back up */
             boss.x += sintab[(boss.t * 2) & 63] / 12;
             boss.y -= 4;
             if (boss.y <= 18) {
                 boss.y = 18;
-                if (--boss.dive_t > 0) {      /* enraged: chain the next dive */
-                    boss.ty = 1; boss.charge = 20;
+                if (--boss.py[0] > 0) {       /* enraged: chain one warned dive */
+                    boss.ty = 1; boss.charge = 24; boss.dive_t = 24;
                     boss.tx = (i16)(player.x + 8 - boss.w / 2);
                 } else {
                     boss.ty = 0; boss.mv_t = (i16)(44 - boss.phase * 10);
@@ -1078,22 +1130,15 @@ static void boss_move(void)
             move_toward(&boss.y, boss.py[0], 3);
             if (--boss.dive_t <= 0) { boss.ty = 2; boss.dive_t = 10; }
         } else {                              /* lunge across the screen */
-            boss.x += boss.dir * 5;
+            boss.x += boss.dir * 4;
             if (boss.phase >= 2 && boss.dive_t > 0 &&
                 boss.x + boss.w / 2 >= player.x && boss.x + boss.w / 2 <= player.x + 16) {
-                boss.x -= boss.dir * 5;       /* menacing mid-lunge pause */
+                boss.x -= boss.dir * 4;       /* menacing mid-lunge pause */
                 boss.dive_t--;
             }
             if (boss.x <= 6 || boss.x >= SCRW - boss.w - 6) {
                 boss.dir = (i16)-boss.dir;    /* attach to the far wall */
-                if (boss.phase >= 1 && (rnd() % 100) < 40) {
-                    boss.ty = 1; boss.dive_t = 16; boss.charge = 16;   /* quick re-lunge */
-                    boss.py[0] = player.y;
-                    if (boss.py[0] > 150) boss.py[0] = 150;
-                    if (boss.py[0] < 20)  boss.py[0] = 20;
-                } else {
-                    boss.ty = 0; boss.mv_t = (i16)(56 - boss.phase * 8);
-                }
+                boss.ty = 0; boss.mv_t = (i16)(64 - boss.phase * 6);
             }
         }
         break;
@@ -1106,7 +1151,7 @@ static void boss_move(void)
             move_toward(&boss.x, (i16)(player.x + 8 - boss.w / 2), 2);
             if (--boss.dive_t <= 0) { boss.ty = 2; boss.dive_t = 0; }
         } else if (boss.ty == 2) {            /* crush */
-            boss.y += 5;
+            boss.y += 4;
             if (boss.y >= 140) {
                 boss.y = 140; shk = 10; snd_sfx(SFX_EXPLODE);
                 for (k = 1; k <= 3; k++) {    /* horizontal shockwave along the floor */
@@ -1120,7 +1165,7 @@ static void boss_move(void)
             boss.y -= (boss.dive_t ? 3 : 1);
             if (boss.dive_t && boss.y <= 100) {
                 boss.x += (player.x + 8 > boss.x + boss.w / 2) ? 40 : -40;
-                boss.ty = 2; boss.dive_t = 0; boss.charge = 20;
+                boss.ty = 1; boss.dive_t = 20; boss.py[0] = player.y; boss.charge = 20;
             } else if (boss.y <= 64) {
                 boss.y = 64; boss.ty = 0;
                 boss.mv_t = (i16)(96 - boss.phase * 30);
@@ -1128,7 +1173,7 @@ static void boss_move(void)
         }
         break;
     case 6: {                                 /* SERAPH: pendulum scythe sweep */
-        i16 ph = (i16)((boss.phase >= 2) ? (boss.t * 2) : boss.t);
+        i16 ph = (i16)((boss.phase >= 2) ? (boss.t + boss.t / 2) : boss.t);
         i16 s = sintab[ph & 63];
         i16 as = (s < 0) ? (i16)-s : s;
         boss.x = (i16)(cx + s * 7 / 4);
@@ -1227,7 +1272,7 @@ static void boss_move(void)
         } else if (boss.ty == 1) {            /* frozen eye telegraph */
             if (--boss.dive_t <= 0) boss.ty = 2;
         } else if (boss.ty == 2) {            /* guillotine drop */
-            boss.y += 5;
+            boss.y += 4;
             if (boss.y >= 150) boss.ty = 3;
         } else {                              /* drag back up, raking the corridor */
             boss.y -= 2;
@@ -1291,9 +1336,11 @@ static void boss_move(void)
                     snd_sfx(SFX_PHASE);
                 }
             } else if (--boss.dive_t <= 0) { boss.ty = 0; boss.mv_t = 52; }
+        } else if (boss.ty == 2) {            /* visible hold on the dive lane */
+            if (--boss.dive_t <= 0) boss.ty = 3;
         } else if (boss.ty == 3) {            /* REAPER: one dive per orbit cycle */
-            move_toward(&boss.x, boss.tx, 4);
-            boss.y += 5;
+            move_toward(&boss.x, boss.tx, danger_speed());
+            boss.y += danger_speed();
             if (frame & 1) spawn_part((i16)(boss.x + boss.w / 2), boss.y, C_LMAG);
             if (boss.y >= 150) boss.ty = 4;
         } else if (boss.ty == 4) {            /* retreat from the dive */
@@ -1304,7 +1351,7 @@ static void boss_move(void)
             boss.x = (i16)(boss.tx + sintab[(boss.t * 2) & 63]);
             boss.y = (i16)(20 + (sintab[(boss.t * 2 + 16) & 63] + 46) / 2);
             if (--boss.mv_t <= 0) {
-                boss.ty = 3; boss.charge = 20;
+                boss.ty = 2; boss.dive_t = 24; boss.charge = 24;
                 boss.tx = (i16)(player.x + 8 - boss.w / 2);
             }
         }
@@ -1377,24 +1424,75 @@ static void force_powerup(i16 x, i16 y, u8 type)
 }
 static void apply_powerup(u8 type)
 {
+    bool capped = FALSE;
+    bool weapon_fx = FALSE;
+    u8 weapon_col = C_WHITE;
+    char pb[24];
     switch (type) {
-        case PU_GUN:     if (player.gun < GUN_MAX) player.gun++; break;
+        case PU_GUN:     if (player.gun < GUN_MAX) {
+                             player.gun++;
+                             sprintf(pb, "%s LEVEL %d", weapon_name(player.wtype), player.gun);
+                             set_msg(pb); weapon_fx = TRUE;
+                             weapon_col = (player.wtype == WT_LASER) ? C_LCYAN
+                                        : (player.wtype == WT_WAVE) ? C_LMAG : C_YELLOW;
+                         } else capped = TRUE; break;
         case PU_RAPID:   player.rapid  = 700; break;
         case PU_SHIELD:  player.shield = 350; break;   /* ~10 s of invulnerability at 35 FPS */
-        case PU_LIFE:    if (player.lives < 9) player.lives++; break;
-        case PU_MISSILE: player.msl += 4; if (player.msl > 30) player.msl = 30; break;
+        case PU_LIFE:    if (player.lives < 9) player.lives++; else capped = TRUE; break;
+        case PU_MISSILE: if (player.msl < 30) { player.msl += 4; if (player.msl > 30) player.msl = 30; }
+                         else capped = TRUE; break;
         /* Laser while flying the Wave gun doesn't swap weapons - it super-
            charges the Wave for a while (piercing beams + a centre lane). */
-        case PU_LASER:   if (player.wtype == WT_WAVE) player.wave_boost = 350; /* ~10 s at 35 FPS */
-                         else player.wtype = WT_LASER; break;
-        case PU_WAVE:    player.wtype = WT_WAVE; break;
-        case PU_BOMB:    if (player.bombs < 10) player.bombs++; break;
+        case PU_LASER:   if (player.wtype == WT_WAVE) {
+                             player.wave_boost = 350; set_msg("WAVE PIERCE 10 SEC");
+                         } else { player.wtype = WT_LASER; set_msg("LASER EQUIPPED"); }
+                         weapon_fx = TRUE; weapon_col = C_LCYAN; break;
+        case PU_WAVE:    player.wtype = WT_WAVE; set_msg("WAVE EQUIPPED");
+                         weapon_fx = TRUE; weapon_col = C_LMAG; break;
+        case PU_BOMB:    if (player.bombs < 10) player.bombs++; else capped = TRUE; break;
         case PU_SCORE:   score_add(500 + (u32)wave * 50UL); break;
     }
+    if (capped) {
+        score_add(300);
+        strcpy(pb, "+300");
+        spawn_popup(player.x, (i16)(player.y - 8), pb);
+        if (type == PU_GUN) set_msg("WEAPON LEVEL MAX +300");
+    }
+    if (weapon_fx) burst((i16)(player.x + SH_SHIP_W / 2),
+                         (i16)(player.y + SH_SHIP_H / 2), 12, C_WHITE, weapon_col);
     if (type == PU_LIFE || type == PU_SHIELD) snd_sfx(SFX_PICK1);
     else if (type == PU_SCORE) snd_sfx(SFX_COMBO);
     else snd_sfx(SFX_PICK2);
     score_add(50);
+}
+
+static u8 choose_powerup(void)
+{
+    i16 w[PU_COUNT], total = 0, pick;
+    int i;
+    w[PU_GUN] = (player.gun < GUN_MAX) ? 16 : 0;
+    w[PU_RAPID] = (player.rapid > 350) ? 5 : 13;
+    w[PU_SHIELD] = (player.shield > 0) ? 5 : 18;
+    w[PU_LIFE] = (player.lives >= 9) ? 0 : (player.lives <= 2 ? 10 : 3);
+    w[PU_MISSILE] = (player.msl <= 5) ? 24 : (player.msl > 20 ? 8 : 18);
+    w[PU_LASER] = 10; w[PU_WAVE] = 10;
+    w[PU_BOMB] = (player.bombs == 0) ? 12 : (player.bombs >= 5 ? 3 : 7);
+    w[PU_SCORE] = 0;
+    for (i = 0; i < PU_COUNT; i++) total += w[i];
+    if (total <= 0) return PU_SCORE;
+    pick = (i16)(rnd() % (u16)total);
+    for (i = 0; i < PU_COUNT; i++) {
+        if (pick < w[i]) return (u8)i;
+        pick -= w[i];
+    }
+    return PU_SCORE;
+}
+
+static i16 enemy_drop_chance(const Enemy *e)
+{
+    if (boss.active && e->drop_class != DROP_NORMAL)
+        return (g_diff == DIF_EASY) ? 55 : (g_diff == DIF_HARD) ? 45 : 50;
+    return (g_diff == DIF_EASY) ? 20 : (g_diff == DIF_HARD) ? 14 : 17;
 }
 
 /* smart bomb: clear enemy fire and damage everything on screen */
@@ -1402,6 +1500,8 @@ static void apply_boss_damage(i16 dmg)
 {
     if (!boss.active || boss.die_t > 0) return;
     boss.hp -= dmg;
+    boss.recent_dmg += dmg;
+    if (boss.recent_dmg > boss.maxhp) boss.recent_dmg = boss.maxhp;
     boss.hurt_t = 3;
     burst(boss.x + boss.w / 2, boss.y + boss.h / 2, 8, C_WHITE, C_YELLOW);
     if (boss.hp <= 0) boss_die();
@@ -1420,7 +1520,7 @@ static void smart_bomb(void)
         enemy[i].hp -= 5;
         if (enemy[i].hp <= 0) { score_add(100); kill_enemy(&enemy[i]); }
     }
-    if (boss.active) apply_boss_damage(boss_pct_damage(4));
+    if (boss.active) apply_boss_damage(boss_pct_damage(3));
     snd_sfx(SFX_EXPLODE);
 }
 
@@ -1452,6 +1552,22 @@ static void hurt_player(void)
             player.shield = (g_diff == DIF_EASY) ? 140 : 100;
         last_death_score = score;
     }
+}
+
+static void shield_bounce(i16 ox, i16 oy)
+{
+    i16 px = (i16)(player.x + SH_SHIP_W / 2);
+    i16 py = (i16)(player.y + SH_SHIP_H / 2);
+    player.x += (px < ox) ? -12 : 12;
+    player.y += (py < oy) ? -16 : 16;
+    if (player.x < 0) player.x = 0;
+    if (player.x > SCRW - SH_SHIP_W) player.x = SCRW - SH_SHIP_W;
+    if (player.y < 8) player.y = 8;
+    if (player.y > SCRH - SH_SHIP_H) player.y = SCRH - SH_SHIP_H;
+    player.invuln = 12; player.ram_cd = 24;
+    burst(px, py, 18, C_WHITE, C_LCYAN);
+    flash = 3; shk = 10;
+    snd_sfx(SFX_PHASE);
 }
 
 /* score multiplier grows with the current combo (x1..x5) */
@@ -1489,13 +1605,11 @@ static void kill_enemy(Enemy *e)
         risk_spawned = 1;
     }
     {
-        i16 drop_chance = (g_diff == DIF_EASY) ? 18 : (g_diff == DIF_HARD) ? 12 : 15;
-        if (rnd() % 100 < drop_chance) {   /* weighted drop table */
-        u16 r = rnd() % 100;
-        u8 t = (r < 18) ? PU_GUN : (r < 32) ? PU_RAPID : (r < 46) ? PU_SHIELD
-             : (r < 66) ? PU_MISSILE : (r < 78) ? PU_LASER : (r < 90) ? PU_WAVE
-             : (r < 97) ? PU_BOMB : PU_LIFE;
-        drop_powerup(cx - SH_PU_W / 2, cy, t);
+        bool can_drop = !boss.active || boss.drop_budget > 0;
+        bool guaranteed = boss.active && e->drop_class == DROP_SUPPLY;
+        if (can_drop && (guaranteed || rnd() % 100 < enemy_drop_chance(e))) {
+            if (drop_powerup(cx - SH_PU_W / 2, cy, choose_powerup()) && boss.active)
+                boss.drop_budget--;
         }
     }
     e->active = FALSE;
@@ -1525,8 +1639,11 @@ static void boss_finish_death(void)
     flash = 8; shk = 24;
     bosses_defeated++;
     snd_music_game((u8)bosses_defeated);
-    force_powerup(boss.x + 10, boss.y + 10, PU_LIFE);
-    force_powerup(boss.x + boss.w - 22, boss.y + 10, PU_BOMB);
+    force_powerup(boss.x + 10, boss.y + 10,
+                  (player.lives <= 3) ? PU_LIFE : (player.shield <= 0) ? PU_SHIELD
+                  : (player.gun < GUN_MAX) ? PU_GUN : PU_SCORE);
+    force_powerup(boss.x + boss.w - 22, boss.y + 10,
+                  (player.bombs < 5) ? PU_BOMB : PU_SCORE);
     force_powerup(boss.x + boss.w / 2 - SH_PU_W / 2, boss.y + 20, PU_MISSILE);
     boss.active = FALSE;
     if (boss.kind == (u8)(NBOSS - 1) && wave == 60 && !campaign_won) {
@@ -1550,7 +1667,7 @@ static void missile_boom(i16 mx, i16 my)
     }
     if (boss.active &&
         overlap(mx - 26, my - 26, 52, 52, boss.x, boss.y, boss.w, boss.h)) {
-        apply_boss_damage(boss_pct_damage(12));
+        apply_boss_damage(boss_pct_damage(10));
     }
     snd_sfx(SFX_EXPLODE);
 }
@@ -1656,6 +1773,7 @@ static void update_play(void)
         if (key_hit(SC_CTRL)) fire_missile();
         if (key_hit(SC_B)) smart_bomb();
         if (player.invuln > 0) player.invuln--;
+        if (player.ram_cd > 0) player.ram_cd--;
         if (player.shield > 0) player.shield--;
         if (player.rapid  > 0) player.rapid--;
         if (player.wave_boost > 0) player.wave_boost--;
@@ -1748,7 +1866,7 @@ static void update_play(void)
         if (e->elite && e->type == E_WEAVER && (e->t & 31) == 0)
             add_ebullet(e->x + SH_EN_W / 2, e->y + SH_EN_H, 0, 2);
         if (e->type == E_SHOOTER) {
-            if (e->y > 40 && e->y < 120) e->y -= (e->vy - 0); /* linger a touch */
+            if (shooter_lingering(e)) e->y -= e->vy;
             else if (e->mode == 1 && e->y >= 120) {
                 e->x += e->aux * 2;
                 if (e->x < -SH_EN_W || e->x > SCRW) { e->active = FALSE; wave_missed++; continue; }
@@ -1765,10 +1883,10 @@ static void update_play(void)
         }
         if (e->y > SCRH) { e->active = FALSE; wave_missed++; continue; }
         /* collide with player */
-        if (player.alive && player.invuln == 0 &&
-            overlap(e->x + 2, e->y + 2, SH_EN_W - 4, SH_EN_H - 4,
-                    player.x + 3, player.y + 3, SH_SHIP_W - 6, SH_SHIP_H - 6)) {
-            kill_enemy(e); hurt_player(); continue;
+        if (player.alive && overlap(e->x + 2, e->y + 2, SH_EN_W - 4, SH_EN_H - 4,
+                                   player.x + 3, player.y + 3, SH_SHIP_W - 6, SH_SHIP_H - 6)) {
+            if (player.shield > 0) { kill_enemy(e); continue; }
+            if (player.invuln == 0) { kill_enemy(e); hurt_player(); continue; }
         }
         /* collide with player bullets (laser pierces: doesn't despawn) */
         {
@@ -1817,12 +1935,20 @@ static void update_play(void)
             if (boss.y >= ry) { boss.y = ry; boss.entering = FALSE; }
         } else {
             boss_move();
-            if (boss.firecd == 18) { boss.charge = 18; snd_sfx(SFX_PHASE); }
-            if (--boss.firecd <= 0) { boss_fire(); boss.firecd = diff_boss_fire_cd(); }
+            if (!((boss.kind == 9 && (boss.ty == 1 || boss.ty == 2)) ||
+                  (boss.kind == 14 && boss.phase == 1 && (boss.ty == 1 || boss.ty == 2)))) {
+                if (boss.firecd == 18) { boss.charge = 18; snd_sfx(SFX_PHASE); }
+                if (--boss.firecd <= 0) { boss_fire(); boss.firecd = diff_boss_fire_cd(); }
+            }
         }
         boss.t++;
         if (boss.charge > 0) boss.charge--;
         if (boss.hurt_t > 0) boss.hurt_t--;
+        if (boss.recent_dmg > 0 && (frame & 1)) boss.recent_dmg--;
+        if (!boss.entering && boss.kind != 2 && boss.kind != 8 && --boss.support_t <= 0) {
+            summon_escort();
+            boss.support_t = (boss.phase == 0) ? 260 : (boss.phase == 1) ? 220 : 190;
+        }
         /* cycle attack pattern; switch faster when enraged */
         if (--boss.atk_t <= 0) {
             boss.atk = (u8)((boss.atk + 1) % boss_attack_count());
@@ -1851,15 +1977,21 @@ static void update_play(void)
                 if (pbul[j].kind != WT_LASER) pbul[j].active = FALSE;
                 burst(pbul[j].x, pbul[j].y, 2, C_WHITE, C_YELLOW);
                 boss.hp -= pbul[j].dmg;
+                boss.recent_dmg += pbul[j].dmg;
+                if (boss.recent_dmg > boss.maxhp) boss.recent_dmg = boss.maxhp;
                 boss.hurt_t = 2;
                 if (boss.hp <= 0) { boss_die(); break; }
             }
         }
         /* boss body vs player */
-        if (boss.active && boss.die_t == 0 && player.alive && player.invuln == 0 &&
+        if (boss.active && boss.die_t == 0 && player.alive &&
             overlap(boss.x + 2, boss.y, (i16)(boss.w - 4), boss.h,
-                    player.x + 3, player.y + 3, SH_SHIP_W - 6, SH_SHIP_H - 6))
-            hurt_player();
+                    player.x + 3, player.y + 3, SH_SHIP_W - 6, SH_SHIP_H - 6)) {
+            if (player.shield > 0 && player.ram_cd == 0) {
+                apply_boss_damage(boss_pct_damage(10));
+                shield_bounce((i16)(boss.x + boss.w / 2), (i16)(boss.y + boss.h / 2));
+            } else if (player.shield <= 0 && player.invuln == 0) hurt_player();
+        }
     }
 
     /* ---- powerups ---- */
@@ -1961,6 +2093,14 @@ static void draw_hud(void)
         u8 c = (boss.phase >= 2) ? C_LRED : (boss.phase >= 1) ? C_YELLOW : C_LGREEN;
         vga_frame(59, 12, 202, 6, C_DGRAY);
         vga_rect(60, 13, w, 4, c);
+        if (boss.recent_dmg > 0) {
+            i16 rw = (i16)((long)boss.recent_dmg * 200 / boss.maxhp);
+            if (rw < 1) rw = 1;
+            if (w + rw > 200) rw = (i16)(200 - w);
+            if (rw > 0) vga_rect((i16)(60 + w), 13, rw, 4, C_WHITE);
+        }
+        vga_rect(126, 12, 1, 6, C_DGRAY);
+        vga_rect(193, 12, 1, 6, C_DGRAY);
     }
 }
 
@@ -2137,9 +2277,18 @@ static void draw_play(void)
     {
         u8 estage = (wave > 0) ? (u8)(((wave - 1) / 4) & 3) : 0;   /* skin per 4-wave block */
         for (i = 0; i < MAX_ENEMY; i++) if (enemy[i].active) {
+            i16 ex, ey;
             draw_enemy_anim(&enemy[i]);
             DS(enemy[i].x, enemy[i].y, SH_EN_W, SH_EN_H, spr_enemy[estage][enemy[i].type]);
             draw_elite_overlay(&enemy[i]);
+            if (enemy[i].drop_class == DROP_SUPPLY) {
+                u8 c = (frame & 4) ? C_WHITE : C_LGREEN;
+                ex = (i16)(enemy[i].x + SH_EN_W / 2 + shx);
+                ey = (i16)(enemy[i].y - 4 + shy);
+                vga_hline((i16)(ex - 2), ey, 5, c);
+                vga_pixel(ex, (i16)(ey - 2), c);
+                vga_pixel(ex, (i16)(ey + 2), c);
+            }
         }
     }
     if (boss.active && boss.warn == 0) {
@@ -2169,6 +2318,14 @@ static void draw_play(void)
             if (boss.charge > 0) vga_frame((i16)(boss.x - 2 + shx), (i16)(boss.y - 2 + shy),
                                            (i16)(boss.w + 4), (i16)(boss.h + 4),
                                            (boss.charge & 2) ? C_WHITE : C_LRED);
+            if ((boss.kind == 1 && boss.ty == 1) || (boss.kind == 14 && boss.ty == 2)) {
+                i16 mx = (i16)(boss.tx + boss.w / 2 + shx);
+                vga_hline((i16)(mx - 7), (i16)(player.y + 7), 15,
+                          (frame & 2) ? C_WHITE : C_LRED);
+            }
+            if (boss.kind == 9 && boss.ty == 2)
+                vga_frame((i16)(boss.x - 3 + shx), (i16)(boss.y - 3 + shy),
+                          (i16)(boss.w + 6), (i16)(boss.h + 6), C_LMAG);
             /* pulsing core overlay (faster when enraged) */
             vga_rect((i16)(cx - 3), (i16)(cy - 3), 6, 6,
                      (u8)(PAL_FIRE + 8 + ((frame >> (boss.phase >= 2 ? 0 : 1)) & 7)));
@@ -2275,6 +2432,11 @@ static void draw_title(void)
 /* ---------------- game over ---------------- */
 static i16 over_timer = 0;
 
+static bool game_over_continue_requested(void)
+{
+    return (over_timer <= 130 && key_hit(SC_ENTER)) || over_timer == 0;
+}
+
 static void draw_over(void)
 {
     char b[40];
@@ -2285,22 +2447,48 @@ static void draw_over(void)
     text_center(100, b, C_LCYAN);
     sprintf(b, "BEST COMBO x%d", player.max_combo);
     text_center(116, b, C_YELLOW);
-    if (frame & 16) text_center(150, "PRESS SPACE", C_LGRAY);
+    if (frame & 16) text_center(150, "FINALIZING RUN", C_LGRAY);
 }
 
 static void draw_win(void)
 {
     char b[40];
-    text_center(44, "VICTORY", C_YELLOW);
-    text_center(64, "FINAL BOSS DESTROYED", C_WHITE);
-    sprintf(b, "SCORE %06lu", score);
-    text_center(88, b, C_LGREEN);
-    sprintf(b, "MAX COMBO x%d", player.max_combo);
-    text_center(104, b, C_LCYAN);
-    sprintf(b, "BOSSES %d", bosses_defeated);
-    text_center(120, b, C_LMAG);
-    if (frame & 16) text_center(152, "SPACE FREEPLAY", C_WHITE);
-    text_center(168, "ESC TITLE", C_DGRAY);
+    int i;
+    i16 fly = (i16)((win_t * 2) % 390 - 30);
+    /* Planet horizon and fleet flyby: all procedural, period-friendly pixels. */
+    for (i = 0; i < 26; i++) {
+        i16 half = (i16)(88 - i * i / 9);
+        if (half > 0) vga_hline((i16)(160 - half), (i16)(174 + i), (i16)(half * 2),
+                                (u8)(PAL_NEB + 5 + (i >> 2)));
+    }
+    for (i = 0; i < 5; i++) {
+        i16 fx = (i16)(34 + ((win_t * (i + 3) + i * 57) % 252));
+        i16 fy = (i16)(28 + ((i * 31) % 92));
+        i16 r = (i16)((win_t + i * 11) & 15);
+        if (r < 8) {
+            vga_hline((i16)(fx - r), fy, (i16)(r * 2 + 1), (i & 1) ? C_YELLOW : C_LCYAN);
+            vga_hline(fx, (i16)(fy - r), 1, (i & 1) ? C_YELLOW : C_LCYAN);
+            vga_hline(fx, (i16)(fy + r), 1, (i & 1) ? C_YELLOW : C_LCYAN);
+        }
+    }
+    vga_sprite(fly, 126, SH_SHIP_W, SH_SHIP_H, spr_ship[2]);
+    vga_sprite((i16)(fly - 28), 138, SH_SHIP_W, SH_SHIP_H, spr_ship[1]);
+    vga_sprite((i16)(fly - 56), 126, SH_SHIP_W, SH_SHIP_H, spr_ship[0]);
+    for (i = 0; i < 8; i++) {
+        i16 dx = (i16)(136 + ((i * 37 + win_t) % 50));
+        i16 dy = (i16)(54 + ((i * 19 + win_t / 2) % 38));
+        vga_rect(dx, dy, (i16)(2 + (i & 2)), 2, (i & 1) ? C_LRED : C_DGRAY);
+    }
+    text_center(18, "CAMPAIGN COMPLETE", C_YELLOW);
+    text_center(38, (win_t < 90) ? "OVERLORD DESTROYED" : "THE SECTOR IS FREE", C_WHITE);
+    sprintf(b, "SCORE %06lu  COMBO x%d", score, player.max_combo);
+    text_center(92, b, C_LGREEN);
+    sprintf(b, "BOSSES DEFEATED %d", bosses_defeated);
+    text_center(106, b, C_LCYAN);
+    if (win_t >= 90) {
+        if (frame & 16) text_center(152, "SPACE FREEPLAY", C_WHITE);
+        text_center(166, "ESC SAVE + TITLE", C_LGRAY);
+    } else text_center(152, "VICTORY", C_LMAG);
 }
 
 /* ---------------- instruction menu ---------------- */
@@ -2312,9 +2500,10 @@ static const char PU_LETTER[PU_COUNT + 1] = "GRHLMZWB$";
 static void help_row(i16 y, u8 pu, const char *txt)
 {
     char s[2];
-    vga_sprite(52, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
+    vga_sprite(40, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
     s[0] = PU_LETTER[pu]; s[1] = 0;
-    text_draw(54, y + 2, s, C_BLACK);        /* gem's identifying letter */
+    text_draw(55, y + 3, s, C_BLACK);
+    text_draw(54, y + 2, s, C_WHITE);        /* separate high-contrast label */
     text_draw(70, y + 2, txt, C_LGRAY);
 }
 
@@ -2334,18 +2523,17 @@ static void draw_help(void)
         text_center(176, "SPACE NEXT PAGE   ESC BACK", C_LCYAN);
     } else {
         text_center(8, "COMBAT MANUAL", C_YELLOW);
-        text_draw(24,  24, "SPACE  FIRE MAIN WEAPON", C_LGRAY);
-        text_draw(24,  36, "       GUN 1-4 WIDENS FIRE", C_DGRAY);
-        text_draw(24,  52, "WAVE + LASER PICKUP GIVES", C_LMAG);
-        text_draw(24,  64, "       A 10 SEC PIERCE BOOST", C_DGRAY);
-        vga_sprite(28, 78, SH_MSL_W, SH_MSL_H, spr_missile);
-        text_draw(40,  80, "CTRL   MISSILE: BIG BLAST,", C_LGRAY);
-        text_draw(40,  92, "       BEST AGAINST BOSSES", C_DGRAY);
-        text_draw(24, 108, "B      BOMB: CLEAR SHOTS,", C_LGRAY);
-        text_draw(24, 120, "       DAMAGE EVERYTHING", C_DGRAY);
-        text_draw(24, 136, "SHIFT  BOOST: SPEED BURST", C_LGRAY);
-        text_draw(24, 152, "FAST KILLS COMBO UP TO X5", C_LGRAY);
-        text_draw(24, 164, "GRAZE SHOTS FOR BONUS POINTS", C_DGRAY);
+        text_draw(20,  24, "G UPGRADES EQUIPPED WEAPON", C_LGRAY);
+        text_draw(20,  38, "LASER 1/2/3/4 = 1/2/3/4 BEAMS", C_LCYAN);
+        text_draw(20,  52, "WAVE  1/2/3/4 = 5/7/9/11 SHOTS", C_LMAG);
+        text_draw(20,  66, "WAVE + Z = 10 SEC PIERCE", C_WHITE);
+        vga_sprite(24, 82, SH_MSL_W, SH_MSL_H, spr_missile);
+        text_draw(36,  84, "CTRL MISSILE: BEST VS BOSSES", C_LGRAY);
+        text_draw(20, 100, "B BOMB: CLEAR SHOTS + DAMAGE", C_LGRAY);
+        text_draw(20, 116, "SHIFT BOOST: SPEED BURST", C_LGRAY);
+        text_draw(20, 132, "FAST KILLS COMBO UP TO X5", C_LGRAY);
+        text_draw(20, 148, "GRAZE SHOTS FOR BONUS POINTS", C_DGRAY);
+        text_draw(20, 162, "CYAN BOX = ELITE ENEMY", C_LCYAN);
         text_center(182, "SPACE PICKUPS   ESC BACK", C_LCYAN);
     }
 }
@@ -2373,6 +2561,7 @@ void game_run(void)
     int entry_rank = -1;
     char name[NAME_LEN + 1]; int nlen = 0;
     bool paused = FALSE;
+    bool entry_replay = FALSE;
     int prev_state = -1, prev_help = -1; u8 prev_blink = 2;
 
     hi_load();
@@ -2413,7 +2602,7 @@ void game_run(void)
             if (win_pending) {
                 remember_run();
                 snd_music_set(MUS_WIN);
-                state = ST_WIN;
+                state = ST_WIN; win_t = 0;
                 kbd_clear();
                 break;
             }
@@ -2422,33 +2611,43 @@ void game_run(void)
                 remember_run();
                 snd_music_set(MUS_TITLE);
                 over_timer = 160;              /* let the moment land */
+                key_hit(SC_SPACE);             /* held fire never advances Game Over */
+                key_hit(SC_ENTER);
                 state = ST_OVER;
             }
             break;
         case ST_OVER:
             if (over_timer > 0) over_timer--;
-            if ((over_timer <= 130 && (key_hit(SC_SPACE) || key_hit(SC_ENTER))) || over_timer == 0) {
+            if (game_over_continue_requested()) {
                 entry_rank = hi_qualifies(score);
-                if (entry_rank >= 0) { name[0] = 0; nlen = 0; state = ST_ENTRY; }
+                if (entry_rank >= 0) {
+                    strcpy(name, pilot_name); nlen = (int)strlen(name);
+                    entry_name_error = 0; entry_replay = TRUE; state = ST_ENTRY;
+                }
                 else state = ST_SCORES;
             }
             break;
         case ST_ENTRY: {
             char c = kbd_getchar();
-            if (c && nlen < NAME_LEN) { name[nlen++] = c; name[nlen] = 0; }
+            if (c && nlen < NAME_LEN) { name[nlen++] = c; name[nlen] = 0; entry_name_error = 0; }
             if (key_hit(SC_BKSP) && nlen > 0) { name[--nlen] = 0; }
             if (key_hit(SC_ENTER)) {
-                if (nlen == 0) strcpy(name, "PLAYER");
-                hi_insert(entry_rank, name, score);
-                hi_save();
-                state = ST_SCORES;
+                if (nlen == 0) entry_name_error = 1;
+                else {
+                    strcpy(pilot_name, name);
+                    hi_insert(entry_rank, name, score); hi_save(); state = ST_SCORES;
+                }
             }
             if (key_hit(SC_ESC)) {
-                if (nlen == 0) strcpy(name, "PLAYER");
-                hi_insert(entry_rank, name, score);
-                hi_save();
-                reset_game(); start_wave(); state = ST_PLAY; paused = FALSE;
-                snd_music_game(0);
+                if (nlen == 0) entry_name_error = 1;
+                else {
+                    strcpy(pilot_name, name);
+                    hi_insert(entry_rank, name, score); hi_save();
+                    if (entry_replay) {
+                        reset_game(); start_wave(); state = ST_PLAY; paused = FALSE;
+                        snd_music_game(0);
+                    } else state = ST_SCORES;
+                }
             }
             break; }
         case ST_SCORES:
@@ -2457,8 +2656,17 @@ void game_run(void)
                                     snd_music_game(0); }
             break;
         case ST_WIN:
-            if (key_hit(SC_ESC)) { state = ST_TITLE; snd_music_set(MUS_TITLE); kbd_clear(); }
-            if (key_hit(SC_SPACE) || key_hit(SC_ENTER) || key_hit(SC_CTRL)) {
+            win_t++;
+            if (win_t < 90 && win_t % 24 == 0) snd_sfx(SFX_PHASE);
+            if (win_t >= 90 && key_hit(SC_ESC)) {
+                finish_wave(); entry_rank = hi_qualifies(score); snd_music_set(MUS_TITLE);
+                if (entry_rank >= 0) {
+                    strcpy(name, pilot_name); nlen = (int)strlen(name);
+                    entry_name_error = 0; entry_replay = FALSE; state = ST_ENTRY;
+                } else state = ST_SCORES;
+                kbd_clear();
+            }
+            if (win_t >= 90 && (key_hit(SC_SPACE) || key_hit(SC_ENTER) || key_hit(SC_CTRL))) {
                 win_pending = 0;
                 finish_wave();
                 start_wave();
@@ -2514,7 +2722,9 @@ void game_run(void)
                     text_center(124, nb, C_WHITE);
                 }
                 text_center(150, "TYPE THEN PRESS ENTER", C_LGRAY);
-                text_center(164, "ESC SAVES + REPLAYS", C_DGRAY);
+                text_center(164, entry_name_error ? "NAME REQUIRED" :
+                            (entry_replay ? "ESC SAVES + REPLAYS" : "ESC SAVES SCORE"),
+                            entry_name_error ? C_LRED : C_DGRAY);
                 break; }
             }
             if (snd_muted()) text_draw(SCRW - 40, 190, "MUTE", C_LRED);
@@ -2713,6 +2923,15 @@ void game_selftest_bosses(const char *bmp, int page)
     bmp_dump(bmp);
 }
 
+void game_selftest_win(const char *bmp)
+{
+    reset_game();
+    init_stars(); init_dust(); gen_nebula();
+    score = 987650; player.max_combo = 42; bosses_defeated = 15; win_t = 140;
+    vga_bg_blit(0); draw_stars(); draw_dust(); draw_win();
+    bmp_dump(bmp);
+}
+
 /* ---------------- headless logic self-tests -> SELFTEST.TXT ---------------- */
 static void selftest_log(FILE *f, const char *tag, int pass)
 {
@@ -2802,6 +3021,127 @@ static int selftest_facing_run(void)
     return player.facing_down ? 0 : 1;
 }
 
+static int selftest_damage_rules_run(void)
+{
+    boss.maxhp = 301;
+    return boss_pct_damage(3) == 101 && boss_pct_damage(10) == 31;
+}
+
+static int selftest_shooter_linger_run(void)
+{
+    Enemy e;
+    memset(&e, 0, sizeof(e));
+    e.type = E_SHOOTER; e.y = 60; e.t = 139;
+    if (!shooter_lingering(&e)) return 0;
+    e.t = 140;
+    if (shooter_lingering(&e)) return 0;
+    e.t = 20; e.y = 120;
+    return shooter_lingering(&e) ? 0 : 1;
+}
+
+static int selftest_freeplay_hp_run(void)
+{
+    g_diff = DIF_NORMAL;
+    return boss_health_for(64, 0) == boss_health_for(120, 0)
+        && boss_health_for(64, 14) == boss_health_for(400, 14);
+}
+
+static int selftest_shield_ram_run(void)
+{
+    reset_game();
+    boss.active = TRUE; boss.die_t = 0; boss.maxhp = boss.hp = 100;
+    boss.x = 130; boss.y = 80; boss.w = 50; boss.h = 40;
+    player.x = 150; player.y = 110; player.shield = 100; player.ram_cd = 0;
+    apply_boss_damage(boss_pct_damage(10));
+    shield_bounce((i16)(boss.x + boss.w / 2), (i16)(boss.y + boss.h / 2));
+    return boss.hp == 90 && player.ram_cd == 24 && player.invuln == 12 && player.y > 110;
+}
+
+static int selftest_drop_policy_run(void)
+{
+    int i;
+    reset_game(); player.gun = GUN_MAX; player.lives = 9;
+    for (i = 0; i < 200; i++) {
+        u8 p = choose_powerup();
+        if (p == PU_GUN || p == PU_LIFE) return 0;
+    }
+    return 1;
+}
+
+static int selftest_game_over_input_run(void)
+{
+    over_timer = 120;
+    g_edge[SC_SPACE] = 1; g_edge[SC_ENTER] = 0;
+    if (game_over_continue_requested()) return 0;
+    g_edge[SC_SPACE] = 0; g_edge[SC_ENTER] = 1;
+    if (!game_over_continue_requested()) return 0;
+    over_timer = 0;
+    return game_over_continue_requested() ? 1 : 0;
+}
+
+static i16 active_player_bullets(u8 kind)
+{
+    int i; i16 n = 0;
+    for (i = 0; i < MAX_PBULLET; i++)
+        if (pbul[i].active && pbul[i].kind == kind) n++;
+    return n;
+}
+
+static int selftest_weapon_tiers_run(void)
+{
+    i16 g;
+    reset_game(); player.x = 150; player.y = 160; player.facing_down = FALSE;
+    for (g = 1; g <= GUN_MAX; g++) {
+        memset(pbul, 0, sizeof(pbul));
+        player.wtype = WT_LASER; player.gun = (u8)g; player.firecd = 0;
+        player_fire();
+        if (active_player_bullets(WT_LASER) != g) return 0;
+        memset(pbul, 0, sizeof(pbul));
+        player.wtype = WT_WAVE; player.wave_boost = 0; player.firecd = 0;
+        player_fire();
+        if (active_player_bullets(WT_WAVE) != (i16)(g * 2 + 3)) return 0;
+    }
+    return 1;
+}
+
+static int selftest_support_run(void)
+{
+    int i; i16 supply = 0, support = 0, drops = 0;
+    Enemy *carrier = 0;
+    reset_game(); wave = 20; boss.active = TRUE; boss.kind = 0; boss.phase = 0;
+    boss.drop_budget = 4;
+    boss.x = 120; boss.w = 56;
+    summon_escort();
+    if (active_enemy_count() != 2) return 0;
+    for (i = 0; i < MAX_ENEMY; i++) if (enemy[i].active) {
+        if (enemy[i].drop_class == DROP_SUPPLY) { supply++; carrier = &enemy[i]; }
+        if (enemy[i].drop_class == DROP_SUPPORT) support++;
+    }
+    if (supply != 1 || support != 1 || !carrier) return 0;
+    carrier->x = 120; carrier->y = 60;
+    kill_enemy(carrier);
+    for (i = 0; i < MAX_POWERUP; i++) if (powr[i].active) drops++;
+    return drops == 1 && boss.drop_budget == 3;
+}
+
+static int selftest_danger_tells_run(void)
+{
+    int i; i16 y;
+    reset_game(); g_diff = DIF_NORMAL; player.x = 150; player.y = 150;
+    boss.active = TRUE; boss.entering = FALSE; boss.kind = 1;
+    boss.w = spr_boss_w[1]; boss.h = spr_boss_h[1]; boss.x = 140; boss.y = 18;
+    boss.ty = 0; boss.mv_t = 1; boss.tx = boss.x; boss.t = 0; boss.phase = 2;
+    boss_move(); y = boss.y;
+    if (boss.ty != 1 || boss.charge < 20) return 0;
+    for (i = 0; i < 20; i++) { boss_move(); boss.t++; if (boss.y != y) return 0; }
+    boss.kind = 14; boss.w = spr_boss_w[14]; boss.h = spr_boss_h[14];
+    boss.x = 140; boss.y = 20; boss.ty = 0; boss.mv_t = 1; boss.phase = 2; boss.t = 10;
+    boss_move(); y = boss.y;
+    if (boss.ty != 2 || boss.charge < 20) return 0;
+    for (i = 0; i < 20; i++) { boss_move(); boss.t++; if (boss.y != y) return 0; }
+    return danger_speed() <= 4;
+}
+
 void game_selftest_logic(void)
 {
     FILE *f = fopen("SELFTEST.TXT", "w");
@@ -2810,6 +3150,15 @@ void game_selftest_logic(void)
     wave = 8;
     selftest_log(f, "SEPARATION", selftest_sep_run());
     selftest_log(f, "DIRECTIONAL FIRE", selftest_facing_run());
+    selftest_log(f, "BOSS PERCENT DAMAGE", selftest_damage_rules_run());
+    selftest_log(f, "SHOOTER LINGER EXIT", selftest_shooter_linger_run());
+    selftest_log(f, "FREEPLAY HP CAP", selftest_freeplay_hp_run());
+    selftest_log(f, "SHIELD RAM", selftest_shield_ram_run());
+    selftest_log(f, "ADAPTIVE DROPS", selftest_drop_policy_run());
+    selftest_log(f, "GAME OVER INPUT LOCK", selftest_game_over_input_run());
+    selftest_log(f, "WEAPON TIER PATTERNS", selftest_weapon_tiers_run());
+    selftest_log(f, "BOSS SUPPORT DROP", selftest_support_run());
+    selftest_log(f, "DANGEROUS MOVE TELLS", selftest_danger_tells_run());
     for (kind = 0; kind < NBOSS; kind++)
         for (phase = 0; phase < 3; phase++) {
             char tag[24];

@@ -25,6 +25,7 @@ const PU_GUN=0, PU_RAPID=1, PU_SHIELD=2, PU_LIFE=3, PU_MISSILE=4,
       PU_LASER=5, PU_WAVE=6, PU_BOMB=7, PU_SCORE=8, PU_COUNT=9;
 
 const E_SCOUT=0, E_WEAVER=1, E_SHOOTER=2;
+const DROP_NORMAL=0, DROP_SUPPORT=1, DROP_SUPPLY=2;
 
 const MAX_PBULLET=48, MAX_EBULLET=64, MAX_ENEMY=28, MAX_POWERUP=8,
       MAX_PART=160, MAX_STARS=96, MAX_MISSILE=6;
@@ -640,6 +641,7 @@ function clearInput() {
   for (const k in keyState) keyState[k] = 0;
   pointerAim.active = false;
   pointerAim.id = null;
+  resetMobileMove();
 }
 function eventGamePos(e) {
   const r = canvas.getBoundingClientRect();
@@ -966,10 +968,11 @@ let last_death_score = 0;
 let wave_kills = 0, wave_missed = 0, wave_hit = 0, combo_broken = 0;
 let risk_spawned = 0, bosses_defeated = 0, last_wave = 0, last_combo = 0, last_bosses = 0;
 let ship_bank = 1;
-let campaign_won = 0, win_pending = 0;
-let state = ST_TITLE, paused = false;
+let campaign_won = 0, win_pending = 0, win_t = 0;
+let state = ST_TITLE, paused = false, mobileOrientationSuspended = false;
 let entry_rank = -1, entry_name = '', over_timer = 0, help_page = 0;
-let entrySubmitted = false, uiState = null;
+let entrySubmitted = false, entryNameError = false, entryReplay = false, uiState = null;
+let pilotName = '';
 
 function set_msg(s) { msg_text = s; msg_timer = 120; }
 function score_scaled(raw) {
@@ -1014,6 +1017,11 @@ function boss_atk_time() {
   return Math.max(48, t);
 }
 function boss_pct_damage(div) { return Math.max(1, Math.ceil(boss.maxhp / div)); }
+function shooter_lingering(e) { return e.y > 40 && e.y < 120 && e.t < 140; }
+function boss_health_for(w, kind) {
+  const hpWave = Math.min(w, 60), hpIndex = w > 60 ? 14 : Math.max(0, Math.floor(w / 4) - 1);
+  return 36 + hpWave * diff_boss_hp_mul() + hpIndex * 8 + BOSSDEF[kind].hpbonus;
+}
 function enemy_score(e) {
   if (e.elite) return e.type === E_SCOUT ? 180 : e.type === E_WEAVER ? 240 : 375;
   return e.type === E_SCOUT ? 100 : e.type === E_WEAVER ? 150 : 250;
@@ -1084,11 +1092,11 @@ function reset_game() {
   player.invuln = 0; player.firecd = 0; player.rapid = 0; player.wave_boost = 0;
   player.boost = BOOST_MAX; player.boost_cd = 0; player.boosting = false;
   player.facing_down = false;
-  player.combo = 0; player.combo_t = 0; player.max_combo = 0; player.alive = true;
+  player.combo = 0; player.combo_t = 0; player.max_combo = 0; player.ram_cd = 0; player.alive = true;
   score = 0; wave = 0; flash = 0; shk = 0;
   wave_banner = 0; msg_timer = 0; msg_text = ''; ship_bank = 1;
   wave_kills = wave_missed = wave_hit = combo_broken = 0;
-  risk_spawned = 0; bosses_defeated = 0; campaign_won = 0; win_pending = 0;
+  risk_spawned = 0; bosses_defeated = 0; campaign_won = 0; win_pending = 0; win_t = 0;
   to_spawn = 0; spawn_cd = 30; last_death_score = 0;
 }
 function init_stars() {
@@ -1141,11 +1149,12 @@ function start_wave() {
     boss.phase = 0; boss.last_phase = 0; boss.summons = 0;
     boss.atk = 0; boss.atk_t = boss_atk_time(); boss.spin = 0;
     boss.x = (SCRW - boss.w) >> 1; boss.y = -boss.h;
-    boss.maxhp = boss.hp = 36 + wave * diff_boss_hp_mul() + boss_index * 8 + bd.hpbonus;
+    boss.maxhp = boss.hp = boss_health_for(wave, boss.kind);
     if (boss.maxhp < 20) boss.maxhp = boss.hp = 20;
     boss.dir = 1; boss.t = 0; boss.firecd = 60; boss.charge = 0;
     boss.tx = boss.x; boss.ty = 0; boss.mv_t = 50;
     boss.launch_t = 90; boss.squads = 0;
+    boss.support_t = 260; boss.drop_budget = 4; boss.recent_dmg = 0;
     boss.hurt_t = 0; boss.dive_t = 0; boss.die_t = 0;
     boss.px = [0, 0]; boss.py = [0, 0];
     boss.warn = 70;                     /* WARNING banner before the entrance */
@@ -1177,7 +1186,7 @@ function init_enemy(e, type, x) {
   if (g_diff === DIF_EASY) elite_chance -= 4;
   if (g_diff === DIF_HARD) elite_chance += 5;
   e.elite = (wave >= 7 && (rnd() % 100) < elite_chance) ? 1 : 0;
-  e.mode = 0; e.aux = 0;
+  e.mode = 0; e.drop_class = DROP_NORMAL; e.aux = 0;
   if (type === E_SCOUT)   { e.hp = 1; e.vy += 1; }
   if (type === E_WEAVER)  { e.hp = 2; }
   if (type === E_SHOOTER) { e.hp = 3; if (rnd() % 100 < 35) { e.mode = 1; e.aux = (rnd() & 1) ? 1 : -1; } }
@@ -1193,30 +1202,41 @@ function spawn_one(type, x, y, mode) {
   for (const e of enemies) if (!e.active) {
     init_enemy(e, type, x);
     e.y = y; e.mode = mode;
-    return true;
+    return e;
   }
-  return false;
+  return null;
 }
 function free_enemy_slots() {
   let n = 0;
   for (let i = 0; i < MAX_ENEMY; i++) if (!enemies[i].active) n++;
   return n;
 }
+function active_enemy_count() {
+  let n = 0; for (const e of enemies) if (e.active) n++; return n;
+}
 function summon_escort() {
+  const size = 2 + (boss.phase >= 1 ? 1 : 0);
+  if (active_enemy_count() >= 6 || free_enemy_slots() < size) return;
   const type = (boss.kind === 3 || boss.kind === 11) ? E_WEAVER : E_SCOUT;
   const x0 = boss.x < 80 ? boss.x + 36 : boss.x - 28;
-  for (let n = 0; n < 3; n++) spawn_one(type, x0 + n*20, -SH_EN_H - n*12, 0);
-  set_msg('ESCORTS INBOUND');
+  for (let n = 0; n < size; n++) {
+    const e = spawn_one(type, x0 + n*20, -SH_EN_H - n*12, 0);
+    if (e) e.drop_class = n === 0 ? DROP_SUPPLY : DROP_SUPPORT;
+  }
+  set_msg('SUPPLY ESCORTS');
 }
 /* carrier: launch a fighter squad from the two bays, only if the shared pool
    has room for the whole squad (never partial / never overflow MAX_ENEMY). */
 function launch_squad() {
-  const size = 2 + (boss.phase >= 1 ? 1 : 0);
-  if (free_enemy_slots() < size) return;
+  const size = 3 + (boss.phase >= 1 ? 1 : 0);
+  if (active_enemy_count() >= 6 || free_enemy_slots() < size) return;
   const lx = boss.x + 6, rx = boss.x + boss.w - 6 - SH_EN_W;
-  for (let n = 0; n < size; n++) spawn_one(E_SCOUT, (n & 1) ? rx : lx, -SH_EN_H - n*10, 0);
+  for (let n = 0; n < size; n++) {
+    const e = spawn_one(E_SCOUT, (n & 1) ? rx : lx, -SH_EN_H - n*10, 0);
+    if (e) e.drop_class = n === 0 ? DROP_SUPPLY : DROP_SUPPORT;
+  }
   boss.squads++;
-  set_msg('FIGHTERS LAUNCHED');
+  set_msg('SUPPLY FIGHTERS');
 }
 function spawn_enemy() {
   if (to_spawn >= 3 && (rnd() % 100) < 26) {
@@ -1304,8 +1324,16 @@ function player_fire() {
   let cd;
   switch (player.wtype) {
   case WT_LASER:
-    add_pbullet(cx, cy+dir*2, 0, dir*12, WT_LASER);
-    if (g >= 3) { add_pbullet(cx-6, cy, 0, dir*12, WT_LASER); add_pbullet(cx+6, cy, 0, dir*12, WT_LASER); }
+    if (g === 1) add_pbullet(cx, cy+dir*2, 0, dir*12, WT_LASER);
+    else if (g === 2) {
+      add_pbullet(cx-4, cy, 0, dir*12, WT_LASER); add_pbullet(cx+4, cy, 0, dir*12, WT_LASER);
+    } else if (g === 3) {
+      add_pbullet(cx-7, cy, 0, dir*12, WT_LASER); add_pbullet(cx, cy+dir*2, 0, dir*12, WT_LASER);
+      add_pbullet(cx+7, cy, 0, dir*12, WT_LASER);
+    } else {
+      add_pbullet(cx-10, cy, 0, dir*12, WT_LASER); add_pbullet(cx-4, cy+dir*2, 0, dir*12, WT_LASER);
+      add_pbullet(cx+4, cy+dir*2, 0, dir*12, WT_LASER); add_pbullet(cx+10, cy, 0, dir*12, WT_LASER);
+    }
     cd = 7;
     break;
   case WT_WAVE: {
@@ -1590,22 +1618,24 @@ function boss_move() {
       boss.y = 18 + Math.trunc((sintab[boss.t & 63] + 46) / 30);
       boss.x = move_toward(boss.x, boss.tx, 2);
       if (--boss.mv_t <= 0) {
-        boss.ty = 1; boss.charge = 20;
+        boss.ty = 1; boss.charge = 24; boss.dive_t = 24;
         boss.tx = player.x + 8 - (boss.w>>1);
-        boss.dive_t = boss.phase >= 2 ? 2 : 1;    /* chained dives */
+        boss.py[0] = boss.phase >= 2 ? 2 : 1;     /* chained dives */
       }
-    } else if (boss.ty === 1) {             /* dive deep, afterimage trail */
-      boss.x = move_toward(boss.x, boss.tx, 4);
-      boss.y += 5;
+    } else if (boss.ty === 1) {             /* hold on the marked dive lane */
+      if (--boss.dive_t <= 0) boss.ty = 2;
+    } else if (boss.ty === 2) {             /* dive deep, afterimage trail */
+      boss.x = move_toward(boss.x, boss.tx, g_diff === DIF_EASY ? 3 : 4);
+      boss.y += g_diff === DIF_EASY ? 3 : 4;
       if (frame & 1) spawn_part(boss.x + (boss.w>>1), boss.y, C_LRED);
-      if (boss.y >= 150) boss.ty = 2;
+      if (boss.y >= 150) boss.ty = 3;
     } else {                                /* strafing arc back up */
       boss.x += Math.trunc(sintab[(boss.t * 2) & 63] / 12);
       boss.y -= 4;
       if (boss.y <= 18) {
         boss.y = 18;
-        if (--boss.dive_t > 0) {            /* enraged: chain the next dive */
-          boss.ty = 1; boss.charge = 20;
+        if (--boss.py[0] > 0) {             /* enraged: chain one warned dive */
+          boss.ty = 1; boss.charge = 24; boss.dive_t = 24;
           boss.tx = player.x + 8 - (boss.w>>1);
         } else {
           boss.ty = 0; boss.mv_t = 44 - boss.phase * 10;
@@ -1657,20 +1687,15 @@ function boss_move() {
       boss.y = move_toward(boss.y, boss.py[0], 3);
       if (--boss.dive_t <= 0) { boss.ty = 2; boss.dive_t = 10; }
     } else {                                /* lunge across the screen */
-      boss.x += boss.dir * 5;
+      boss.x += boss.dir * 4;
       if (boss.phase >= 2 && boss.dive_t > 0 &&
           boss.x + (boss.w>>1) >= player.x && boss.x + (boss.w>>1) <= player.x + 16) {
-        boss.x -= boss.dir * 5;             /* menacing mid-lunge pause */
+        boss.x -= boss.dir * 4;             /* menacing mid-lunge pause */
         boss.dive_t--;
       }
       if (boss.x <= 6 || boss.x >= SCRW - boss.w - 6) {
         boss.dir = -boss.dir;               /* attach to the far wall */
-        if (boss.phase >= 1 && (rnd() % 100) < 40) {
-          boss.ty = 1; boss.dive_t = 16; boss.charge = 16;   /* quick re-lunge */
-          boss.py[0] = clamp(player.y, 20, 150);
-        } else {
-          boss.ty = 0; boss.mv_t = 56 - boss.phase * 8;
-        }
+        boss.ty = 0; boss.mv_t = 64 - boss.phase * 6;
       }
     }
     break;
@@ -1683,7 +1708,7 @@ function boss_move() {
       boss.x = move_toward(boss.x, player.x + 8 - (boss.w>>1), 2);
       if (--boss.dive_t <= 0) { boss.ty = 2; boss.dive_t = 0; }
     } else if (boss.ty === 2) {             /* crush */
-      boss.y += 5;
+      boss.y += 4;
       if (boss.y >= 140) {
         boss.y = 140; shk = 10; snd_sfx(SFX_EXPLODE);
         for (let k = 1; k <= 3; k++) {      /* horizontal shockwave along the floor */
@@ -1697,7 +1722,7 @@ function boss_move() {
       boss.y -= boss.dive_t ? 3 : 1;
       if (boss.dive_t && boss.y <= 100) {
         boss.x += player.x + 8 > boss.x + (boss.w>>1) ? 40 : -40;
-        boss.ty = 2; boss.dive_t = 0; boss.charge = 20;
+        boss.ty = 1; boss.dive_t = 20; boss.py[0] = player.y; boss.charge = 20;
       } else if (boss.y <= 64) {
         boss.y = 64; boss.ty = 0;
         boss.mv_t = 96 - boss.phase * 30;
@@ -1705,7 +1730,7 @@ function boss_move() {
     }
     break;
   case 6: {                                 /* SERAPH: pendulum scythe sweep */
-    const ph = boss.phase >= 2 ? boss.t * 2 : boss.t;
+    const ph = boss.phase >= 2 ? boss.t + Math.trunc(boss.t / 2) : boss.t;
     const s = sintab[ph & 63];
     const as = s < 0 ? -s : s;
     boss.x = cx + Math.trunc(s * 7 / 4);
@@ -1799,7 +1824,7 @@ function boss_move() {
     } else if (boss.ty === 1) {             /* frozen eye telegraph */
       if (--boss.dive_t <= 0) boss.ty = 2;
     } else if (boss.ty === 2) {             /* guillotine drop */
-      boss.y += 5;
+      boss.y += 4;
       if (boss.y >= 150) boss.ty = 3;
     } else {                                /* drag back up, raking the corridor */
       boss.y -= 2;
@@ -1861,9 +1886,11 @@ function boss_move() {
           snd_sfx(SFX_PHASE);
         }
       } else if (--boss.dive_t <= 0) { boss.ty = 0; boss.mv_t = 52; }
+    } else if (boss.ty === 2) {             /* visible hold on the dive lane */
+      if (--boss.dive_t <= 0) boss.ty = 3;
     } else if (boss.ty === 3) {             /* REAPER: one dive per orbit cycle */
-      boss.x = move_toward(boss.x, boss.tx, 4);
-      boss.y += 5;
+      boss.x = move_toward(boss.x, boss.tx, g_diff === DIF_EASY ? 3 : 4);
+      boss.y += g_diff === DIF_EASY ? 3 : 4;
       if (frame & 1) spawn_part(boss.x + (boss.w>>1), boss.y, C_LMAG);
       if (boss.y >= 150) boss.ty = 4;
     } else if (boss.ty === 4) {             /* retreat from the dive */
@@ -1874,7 +1901,7 @@ function boss_move() {
       boss.x = boss.tx + sintab[(boss.t * 2) & 63];
       boss.y = 20 + Math.trunc((sintab[(boss.t * 2 + 16) & 63] + 46) / 2);
       if (--boss.mv_t <= 0) {
-        boss.ty = 3; boss.charge = 20;
+        boss.ty = 2; boss.dive_t = 24; boss.charge = 24;
         boss.tx = player.x + 8 - (boss.w>>1);
       }
     }
@@ -1920,26 +1947,65 @@ function force_powerup(x, y, type) {
   p.active = true; p.type = type; p.x = x; p.y = y; p.t = 0;
 }
 function apply_powerup(type) {
+  let capped = false;
+  let weaponFx = false, weaponCol = C_WHITE;
   switch (type) {
-    case PU_GUN:     if (player.gun < GUN_MAX) player.gun++; break;
+    case PU_GUN:
+      if (player.gun < GUN_MAX) {
+        player.gun++;
+        set_msg((player.wtype === WT_LASER ? 'LASER' : player.wtype === WT_WAVE ? 'WAVE' : 'CANNON') + ' LEVEL ' + player.gun);
+        weaponFx = true;
+        weaponCol = player.wtype === WT_LASER ? C_LCYAN : player.wtype === WT_WAVE ? C_LMAG : C_YELLOW;
+      } else capped = true;
+      break;
     case PU_RAPID:   player.rapid = 700; break;
     case PU_SHIELD:  player.shield = 350; break;   /* ~10 s of invulnerability at 35 FPS */
-    case PU_LIFE:    if (player.lives < 9) player.lives++; break;
-    case PU_MISSILE: player.msl = Math.min(30, player.msl + 4); break;
-    case PU_LASER:   if (player.wtype === WT_WAVE) player.wave_boost = 350;
-                     else player.wtype = WT_LASER; break;
-    case PU_WAVE:    player.wtype = WT_WAVE; break;
-    case PU_BOMB:    if (player.bombs < 10) player.bombs++; break;
+    case PU_LIFE:    if (player.lives < 9) player.lives++; else capped = true; break;
+    case PU_MISSILE: if (player.msl < 30) player.msl = Math.min(30, player.msl + 4); else capped = true; break;
+    case PU_LASER:
+      if (player.wtype === WT_WAVE) { player.wave_boost = 350; set_msg('WAVE PIERCE 10 SEC'); }
+      else { player.wtype = WT_LASER; set_msg('LASER EQUIPPED'); }
+      weaponFx = true; weaponCol = C_LCYAN; break;
+    case PU_WAVE:
+      player.wtype = WT_WAVE; set_msg('WAVE EQUIPPED');
+      weaponFx = true; weaponCol = C_LMAG; break;
+    case PU_BOMB:    if (player.bombs < 10) player.bombs++; else capped = true; break;
     case PU_SCORE:   score_add(500 + wave * 50); break;
   }
+  if (capped) {
+    score_add(300); spawn_popup(player.x, player.y - 8, '+300');
+    if (type === PU_GUN) set_msg('WEAPON LEVEL MAX +300');
+  }
+  if (weaponFx) burst(player.x + (SH_SHIP_W>>1), player.y + (SH_SHIP_H>>1), 12, C_WHITE, weaponCol);
   if (type === PU_LIFE || type === PU_SHIELD) snd_sfx(SFX_PICK1);
   else if (type === PU_SCORE) snd_sfx(SFX_COMBO);
   else snd_sfx(SFX_PICK2);
   score_add(50);
 }
+function choose_powerup() {
+  const weights = [];
+  weights[PU_GUN] = player.gun < GUN_MAX ? 16 : 0;
+  weights[PU_RAPID] = player.rapid > 350 ? 5 : 13;
+  weights[PU_SHIELD] = player.shield > 0 ? 5 : 18;
+  weights[PU_LIFE] = player.lives >= 9 ? 0 : player.lives <= 2 ? 10 : 3;
+  weights[PU_MISSILE] = player.msl <= 5 ? 24 : player.msl > 20 ? 8 : 18;
+  weights[PU_LASER] = 10; weights[PU_WAVE] = 10;
+  weights[PU_BOMB] = player.bombs === 0 ? 12 : player.bombs >= 5 ? 3 : 7;
+  weights[PU_SCORE] = 0;
+  let total = weights.reduce((a, b) => a + b, 0), pick = total ? rnd() % total : 0;
+  if (!total) return PU_SCORE;
+  for (let i = 0; i < weights.length; i++) { if (pick < weights[i]) return i; pick -= weights[i]; }
+  return PU_SCORE;
+}
+function enemy_drop_chance(e) {
+  if (boss.active && e.drop_class !== DROP_NORMAL)
+    return g_diff === DIF_EASY ? 55 : g_diff === DIF_HARD ? 45 : 50;
+  return g_diff === DIF_EASY ? 20 : g_diff === DIF_HARD ? 14 : 17;
+}
 function apply_boss_damage(dmg) {
   if (!boss.active || boss.die_t > 0) return;
   boss.hp -= dmg;
+  boss.recent_dmg = Math.min(boss.maxhp, (boss.recent_dmg || 0) + dmg);
   boss.hurt_t = 3;
   burst(boss.x + (boss.w>>1), boss.y + (boss.h>>1), 8, C_WHITE, C_YELLOW);
   if (boss.hp <= 0) boss_die();
@@ -1956,7 +2022,7 @@ function smart_bomb() {
     e.hp -= 5;
     if (e.hp <= 0) { score_add(100); kill_enemy(e); }
   }
-  if (boss.active) apply_boss_damage(boss_pct_damage(4));
+  if (boss.active) apply_boss_damage(boss_pct_damage(3));
   snd_sfx(SFX_EXPLODE);
 }
 
@@ -1990,6 +2056,15 @@ function hurt_player() {
     last_death_score = score;
   }
 }
+function shield_bounce(ox, oy) {
+  const px = player.x + (SH_SHIP_W>>1), py = player.y + (SH_SHIP_H>>1);
+  player.x += px < ox ? -12 : 12;
+  player.y += py < oy ? -16 : 16;
+  player.x = Math.max(0, Math.min(SCRW-SH_SHIP_W, player.x));
+  player.y = Math.max(8, Math.min(SCRH-SH_SHIP_H, player.y));
+  player.invuln = 12; player.ram_cd = 24;
+  burst(px, py, 18, C_WHITE, C_LCYAN); flash = 3; shk = 10; snd_sfx(SFX_PHASE);
+}
 function combo_mult() { return Math.min(5, 1 + Math.floor(player.combo / 6)); }
 function kill_enemy(e) {
   const cx = e.x + (SH_EN_W>>1), cy = e.y + (SH_EN_H>>1);
@@ -2008,13 +2083,10 @@ function kill_enemy(e) {
     drop_powerup(rrange(96, 212), rrange(38, 72), PU_SCORE);
     risk_spawned = 1;
   }
-  const drop_chance = g_diff === DIF_EASY ? 18 : g_diff === DIF_HARD ? 12 : 15;
-  if (rnd() % 100 < drop_chance) {
-    const r = rnd() % 100;
-    const t = r < 18 ? PU_GUN : r < 32 ? PU_RAPID : r < 46 ? PU_SHIELD
-            : r < 66 ? PU_MISSILE : r < 78 ? PU_LASER : r < 90 ? PU_WAVE
-            : r < 97 ? PU_BOMB : PU_LIFE;
-    drop_powerup(cx - (SH_PU_W>>1), cy, t);
+  const canDrop = !boss.active || boss.drop_budget > 0;
+  const guaranteed = boss.active && e.drop_class === DROP_SUPPLY;
+  if (canDrop && (guaranteed || rnd() % 100 < enemy_drop_chance(e))) {
+    if (drop_powerup(cx - (SH_PU_W>>1), cy, choose_powerup()) && boss.active) boss.drop_budget--;
   }
   e.active = false;
   snd_sfx(tier_up ? SFX_COMBO : SFX_EXPLODE);
@@ -2037,8 +2109,9 @@ function boss_finish_death() {
   flash = 8; shk = 24;
   bosses_defeated++;
   snd_music_game(bosses_defeated);
-  force_powerup(boss.x + 10, boss.y + 10, PU_LIFE);
-  force_powerup(boss.x + boss.w - 22, boss.y + 10, PU_BOMB);
+  force_powerup(boss.x + 10, boss.y + 10,
+    player.lives <= 3 ? PU_LIFE : player.shield <= 0 ? PU_SHIELD : player.gun < GUN_MAX ? PU_GUN : PU_SCORE);
+  force_powerup(boss.x + boss.w - 22, boss.y + 10, player.bombs < 5 ? PU_BOMB : PU_SCORE);
   force_powerup(boss.x + (boss.w>>1) - (SH_PU_W>>1), boss.y + 20, PU_MISSILE);
   boss.active = false;
   if (boss.kind === (BOSSDEF.length - 1) && wave === 60 && !campaign_won) {
@@ -2057,7 +2130,7 @@ function missile_boom(mx, my) {
     if (e.hp <= 0) kill_enemy(e);
   }
   if (boss.active && overlap(mx-26, my-26, 52, 52, boss.x, boss.y, boss.w, boss.h)) {
-    apply_boss_damage(boss_pct_damage(12));
+    apply_boss_damage(boss_pct_damage(10));
   }
   snd_sfx(SFX_EXPLODE);
 }
@@ -2093,10 +2166,15 @@ function update_play() {
     }
     ship_bank = 1;
     const kbMove = key_pressed('LEFT') || key_pressed('RIGHT') || key_pressed('UP') || key_pressed('DOWN');
-    if (key_pressed('LEFT'))  { player.x -= sp; ship_bank = 0; }
-    if (key_pressed('RIGHT')) { player.x += sp; ship_bank = 2; }
-    if (key_pressed('UP'))    player.y -= sp;
-    if (key_pressed('DOWN'))  player.y += sp;
+    const joyMove = mobileMode && mobileMove.active && !pointerAim.active && !kbMove;
+    const moveLeft = key_pressed('LEFT') || (joyMove && mobileMove.x < 0);
+    const moveRight = key_pressed('RIGHT') || (joyMove && mobileMove.x > 0);
+    const moveUp = key_pressed('UP') || (joyMove && mobileMove.y < 0);
+    const moveDown = key_pressed('DOWN') || (joyMove && mobileMove.y > 0);
+    if (moveLeft)  { player.x -= sp; ship_bank = 0; }
+    if (moveRight) { player.x += sp; ship_bank = 2; }
+    if (moveUp)    player.y -= sp;
+    if (moveDown)  player.y += sp;
     /* keyboard has priority: using a movement key drops mouse ownership, and
        the mouse only reclaims it by actually moving again (a stationary cursor
        fires no pointermove, so the ship won't snap back to it) */
@@ -2122,10 +2200,11 @@ function update_play() {
       spawn_part(player.x+12, fy, 0);
     }
     if (player.firecd > 0) player.firecd--;
-    if (key_pressed('SPACE') && player.firecd <= 0) player_fire();
+    if ((key_pressed('SPACE') || mobileMode) && player.firecd <= 0) player_fire();
     if (key_hit('CTRL')) fire_missile();
     if (key_hit('B')) smart_bomb();
     if (player.invuln > 0) player.invuln--;
+    if (player.ram_cd > 0) player.ram_cd--;
     if (player.shield > 0) player.shield--;
     if (player.rapid > 0) player.rapid--;
     if (player.wave_boost > 0) player.wave_boost--;
@@ -2197,7 +2276,7 @@ function update_play() {
     if (e.elite && e.type === E_WEAVER && (e.t & 31) === 0)
       add_ebullet(e.x + (SH_EN_W>>1), e.y + SH_EN_H, 0, 2);
     if (e.type === E_SHOOTER) {
-      if (e.y > 40 && e.y < 120) e.y -= e.vy;
+      if (shooter_lingering(e)) e.y -= e.vy;
       else if (e.mode === 1 && e.y >= 120) {
         e.x += e.aux * 2;
         if (e.x < -SH_EN_W || e.x > SCRW) { e.active = false; wave_missed++; continue; }
@@ -2212,9 +2291,10 @@ function update_play() {
       }
     }
     if (e.y > SCRH) { e.active = false; wave_missed++; continue; }
-    if (player.alive && player.invuln === 0 &&
-        overlap(e.x+2, e.y+2, SH_EN_W-4, SH_EN_H-4, player.x+3, player.y+3, SH_SHIP_W-6, SH_SHIP_H-6)) {
-      kill_enemy(e); hurt_player(); continue;
+    if (player.alive && overlap(e.x+2, e.y+2, SH_EN_W-4, SH_EN_H-4,
+                                player.x+3, player.y+3, SH_SHIP_W-6, SH_SHIP_H-6)) {
+      if (player.shield > 0) { kill_enemy(e); continue; }
+      if (player.invuln === 0) { kill_enemy(e); hurt_player(); continue; }
     }
     for (const b of pbul) if (b.active &&
         overlap(b.x, b.y, SH_PB_W, SH_PB_H, e.x+2, e.y, SH_EN_W-4, SH_EN_H)) {
@@ -2252,12 +2332,20 @@ function update_play() {
       if (boss.y >= ry) { boss.y = ry; boss.entering = false; }
     } else {
       boss_move();
-      if (boss.firecd === 18) { boss.charge = 18; snd_sfx(SFX_PHASE); }
-      if (--boss.firecd <= 0) { boss_fire(); boss.firecd = diff_boss_fire_cd(); }
+      if (!((boss.kind === 9 && (boss.ty === 1 || boss.ty === 2)) ||
+            (boss.kind === 14 && boss.phase === 1 && (boss.ty === 1 || boss.ty === 2)))) {
+        if (boss.firecd === 18) { boss.charge = 18; snd_sfx(SFX_PHASE); }
+        if (--boss.firecd <= 0) { boss_fire(); boss.firecd = diff_boss_fire_cd(); }
+      }
     }
     boss.t++;
     if (boss.charge > 0) boss.charge--;
     if (boss.hurt_t > 0) boss.hurt_t--;
+    if (boss.recent_dmg > 0 && (frame & 1)) boss.recent_dmg--;
+    if (!boss.entering && boss.kind !== 2 && boss.kind !== 8 && --boss.support_t <= 0) {
+      summon_escort();
+      boss.support_t = boss.phase === 0 ? 260 : boss.phase === 1 ? 220 : 190;
+    }
     if (--boss.atk_t <= 0) {
       boss.atk = (boss.atk + 1) % boss_attack_count();
       boss.atk_t = boss_atk_time();
@@ -2280,12 +2368,17 @@ function update_play() {
       if (b.kind !== WT_LASER) b.active = false;
       burst(b.x, b.y, 2, C_WHITE, C_YELLOW);
       boss.hp -= b.dmg;
+      boss.recent_dmg = Math.min(boss.maxhp, boss.recent_dmg + b.dmg);
       boss.hurt_t = 2;
       if (boss.hp <= 0) { boss_die(); break; }
     }
-    if (boss.active && boss.die_t === 0 && player.alive && player.invuln === 0 &&
-        overlap(boss.x+2, boss.y, boss.w-4, boss.h, player.x+3, player.y+3, SH_SHIP_W-6, SH_SHIP_H-6))
-      hurt_player();
+    if (boss.active && boss.die_t === 0 && player.alive &&
+        overlap(boss.x+2, boss.y, boss.w-4, boss.h, player.x+3, player.y+3, SH_SHIP_W-6, SH_SHIP_H-6)) {
+      if (player.shield > 0 && player.ram_cd === 0) {
+        apply_boss_damage(boss_pct_damage(10));
+        shield_bounce(boss.x+(boss.w>>1), boss.y+(boss.h>>1));
+      } else if (player.shield <= 0 && player.invuln === 0) hurt_player();
+    }
   }
 
   /* powerups */
@@ -2364,6 +2457,11 @@ function draw_hud() {
     const c = boss.phase >= 2 ? C_LRED : boss.phase >= 1 ? C_YELLOW : C_LGREEN;
     vga_frame(59, 12, 202, 6, C_DGRAY);
     vga_rect(60, 13, Math.max(0, w), 4, c);
+    if (boss.recent_dmg > 0) {
+      const rw = Math.max(1, Math.min(200-w, Math.floor(boss.recent_dmg * 200 / boss.maxhp)));
+      if (rw > 0) vga_rect(60+w, 13, rw, 4, C_WHITE);
+    }
+    vga_rect(126, 12, 1, 6, C_DGRAY); vga_rect(193, 12, 1, 6, C_DGRAY);
   }
 }
 function draw_blasts() {
@@ -2508,6 +2606,12 @@ function draw_play() {
     draw_enemy_anim(e);
     DS(e.x, e.y, SH_EN_W, SH_EN_H, spr_enemy[e.type]);
     draw_elite_overlay(e);
+    if (e.drop_class === DROP_SUPPLY) {
+      const c = frame & 4 ? C_WHITE : C_LGREEN;
+      const ex = e.x + (SH_EN_W>>1) + shx, ey = e.y - 4 + shy;
+      vga_hline(ex-2, ey, 5, c);
+      vga_pixel(ex, ey-2, c); vga_pixel(ex, ey+2, c);
+    }
   }
   if (boss.active && boss.warn === 0) {
     const cx = boss.x + (boss.w>>1) + shx, cy = boss.y + (boss.h>>1) + shy;
@@ -2534,6 +2638,12 @@ function draw_play() {
         vga_frame(boss.x-1+shx, boss.y-1+shy, boss.w+2, boss.h+2, C_WHITE);
       if (boss.charge > 0)
         vga_frame(boss.x-2+shx, boss.y-2+shy, boss.w+4, boss.h+4, boss.charge & 2 ? C_WHITE : C_LRED);
+      if ((boss.kind === 1 && boss.ty === 1) || (boss.kind === 14 && boss.ty === 2)) {
+        const mx = boss.tx + (boss.w>>1) + shx;
+        vga_hline(mx-7, player.y+7, 15, frame&2 ? C_WHITE : C_LRED);
+      }
+      if (boss.kind === 9 && boss.ty === 2)
+        vga_frame(boss.x-3+shx,boss.y-3+shy,boss.w+6,boss.h+6,C_LMAG);
       vga_rect(cx - 3, cy - 3, 6, 6,
                PAL_FIRE + 8 + ((frame >> (boss.phase >= 2 ? 0 : 1)) & 7));
     }
@@ -2610,20 +2720,34 @@ function draw_over() {
   text_center(84, 'FINAL SCORE ' + pad6(score), C_WHITE);
   text_center(100, 'REACHED WAVE ' + wave, C_LCYAN);
   text_center(116, 'BEST COMBO X' + player.max_combo, C_YELLOW);
-  if (frame & 16) text_center(150, 'PRESS SPACE', C_LGRAY);
+  if (frame & 16) text_center(150, 'FINALIZING RUN', C_LGRAY);
 }
 function draw_win() {
-  text_center(44, 'VICTORY', C_YELLOW);
-  text_center(64, 'FINAL BOSS DESTROYED', C_WHITE);
-  text_center(88, 'SCORE ' + pad6(score), C_LGREEN);
-  text_center(104, 'MAX COMBO X' + player.max_combo, C_LCYAN);
-  text_center(120, 'BOSSES ' + bosses_defeated, C_LMAG);
-  if (frame & 16) text_center(152, 'SPACE FREEPLAY', C_WHITE);
-  text_center(168, 'ESC TITLE', C_DGRAY);
+  const fly = (win_t * 2) % 390 - 30;
+  for (let i=0;i<26;i++) {
+    const half=88-Math.floor(i*i/9);
+    if(half>0) vga_hline(160-half,174+i,half*2,PAL_NEB+5+(i>>2));
+  }
+  for (let i=0;i<5;i++) {
+    const fx=34+((win_t*(i+3)+i*57)%252), fy=28+((i*31)%92), r=(win_t+i*11)&15;
+    if(r<8){vga_hline(fx-r,fy,r*2+1,(i&1)?C_YELLOW:C_LCYAN);vga_pixel(fx,fy-r,(i&1)?C_YELLOW:C_LCYAN);vga_pixel(fx,fy+r,(i&1)?C_YELLOW:C_LCYAN);}
+  }
+  vga_sprite(fly,126,SH_SHIP_W,SH_SHIP_H,spr_ship[2]);
+  vga_sprite(fly-28,138,SH_SHIP_W,SH_SHIP_H,spr_ship[1]);
+  vga_sprite(fly-56,126,SH_SHIP_W,SH_SHIP_H,spr_ship[0]);
+  for(let i=0;i<8;i++) vga_rect(136+((i*37+win_t)%50),54+((i*19+(win_t>>1))%38),2+(i&2),2,(i&1)?C_LRED:C_DGRAY);
+  text_center(18,'CAMPAIGN COMPLETE',C_YELLOW);
+  text_center(38,win_t<90?'OVERLORD DESTROYED':'THE SECTOR IS FREE',C_WHITE);
+  text_center(92,'SCORE '+pad6(score)+'  COMBO X'+player.max_combo,C_LGREEN);
+  text_center(106,'BOSSES DEFEATED '+bosses_defeated,C_LCYAN);
+  if(win_t>=90){if(frame&16)text_center(152,'SPACE FREEPLAY',C_WHITE);text_center(166,'ESC SAVE + TITLE',C_LGRAY);}
+  else text_center(152,'VICTORY',C_LMAG);
 }
 function help_row(y, pu, txt) {
-  vga_sprite(52, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
-  text_draw(72, y+2, txt, C_LGRAY);
+  vga_sprite(40, y, SH_PU_W, SH_PU_H, spr_powerup[pu]);
+  text_draw(55, y+3, 'GRHLMZWB$'[pu], C_BLACK);
+  text_draw(54, y+2, 'GRHLMZWB$'[pu], C_WHITE);
+  text_draw(70, y+2, txt, C_LGRAY);
 }
 function draw_help() {
   if (help_page === 0) {
@@ -2640,18 +2764,18 @@ function draw_help() {
     text_center(176, 'SPACE NEXT PAGE   ESC BACK', C_LCYAN);
   } else {
     text_center(8, 'COMBAT MANUAL', C_YELLOW);
-    text_draw(28, 26,  'SPACE  FIRE. GUN LEVELS 1-4', C_LGRAY);
-    text_draw(28, 40,  '       WIDEN YOUR PATTERN', C_DGRAY);
-    vga_sprite(32, 54, SH_MSL_W, SH_MSL_H, spr_missile);
-    text_draw(44, 56,  'CTRL  HOMING MISSILE, BIG', C_LGRAY);
-    text_draw(44, 68,  '      BLAST. BEST VS BOSSES', C_DGRAY);
-    text_draw(28, 86,  'B     SMART BOMB: CLEARS ENEMY', C_LGRAY);
-    text_draw(28, 98,  '      SHOTS, HURTS EVERYTHING', C_DGRAY);
-    text_draw(28, 114, 'SHIFT BOOST: SHORT SPEED BURST', C_LGRAY);
-    text_draw(28, 130, 'COMBO FAST KILLS MULTIPLY SCORE', C_LGRAY);
-    text_draw(28, 142, '      UP TO X5. DYING RESETS IT', C_DGRAY);
-    text_draw(28, 158, 'GRAZE NEAR-MISS SHOTS FOR BONUS', C_LGRAY);
-    text_center(180, 'SPACE FIRST PAGE   ESC BACK', C_LCYAN);
+    text_draw(20, 24,  'G UPGRADES EQUIPPED WEAPON', C_LGRAY);
+    text_draw(20, 38,  'LASER 1/2/3/4 = 1/2/3/4 BEAMS', C_LCYAN);
+    text_draw(20, 52,  'WAVE  1/2/3/4 = 5/7/9/11 SHOTS', C_LMAG);
+    text_draw(20, 66,  'WAVE + Z = 10 SEC PIERCE', C_WHITE);
+    vga_sprite(24, 82, SH_MSL_W, SH_MSL_H, spr_missile);
+    text_draw(36, 84,  'CTRL MISSILE: BEST VS BOSSES', C_LGRAY);
+    text_draw(20, 100, 'B BOMB: CLEAR SHOTS + DAMAGE', C_LGRAY);
+    text_draw(20, 116, 'SHIFT BOOST: SPEED BURST', C_LGRAY);
+    text_draw(20, 132, 'FAST KILLS COMBO UP TO X5', C_LGRAY);
+    text_draw(20, 148, 'GRAZE SHOTS FOR BONUS POINTS', C_DGRAY);
+    text_draw(20, 162, 'CYAN BOX = ELITE ENEMY', C_LCYAN);
+    text_center(182, 'SPACE PICKUPS   ESC BACK', C_LCYAN);
   }
 }
 function draw_scores() {
@@ -2669,7 +2793,8 @@ function draw_entry() {
   text_center(108, 'ENTER NAME:', C_LCYAN);
   text_center(124, entry_name + (frame & 8 ? '_' : ' '), C_WHITE);
   text_center(150, 'TYPE THEN PRESS ENTER', C_LGRAY);
-  text_center(164, 'ESC SAVES + REPLAYS', C_DGRAY);
+  text_center(164, entryNameError ? 'NAME REQUIRED' : (entryReplay ? 'ESC SAVES + REPLAYS' : 'ESC SAVES SCORE'),
+              entryNameError ? C_LRED : C_DGRAY);
 }
 
 /* ================= state machine (game_run) ================= */
@@ -2677,6 +2802,7 @@ function begin_run() {
   reset_game(); start_wave();
   state = ST_PLAY; paused = false;
   pointerAim.active = false; pointerAim.id = null;   /* don't yank the ship to a stale cursor */
+  resetMobileMove();
   snd_music_game(0);
 }
 function syncEntryInput(focus) {
@@ -2685,43 +2811,94 @@ function syncEntryInput(focus) {
   if (focus) setTimeout(() => { nameInput.focus(); nameInput.select(); }, 0);
 }
 function syncHtmlUi(forceFocus) {
+  const stateChanged = uiState !== state;
   const entering = state === ST_ENTRY;
+  const playing = state === ST_PLAY;
+  const winning = state === ST_WIN && win_t >= 90;
+  const portraitBlocked = isPortraitMobile();
+  const suspendForOrientation = playing && portraitBlocked;
+  const showLaunch = mobileMode && !mobileLaunchDismissed && !fullscreenElement();
+  if (suspendForOrientation !== mobileOrientationSuspended) {
+    mobileOrientationSuspended = suspendForOrientation;
+    if (mobileOrientationSuspended) {
+      releaseKey('SHIFT');
+      pointerAim.active = false;
+      pointerAim.id = null;
+      resetMobileMove();
+    }
+    snd_pause(paused || mobileOrientationSuspended);
+  }
   document.body.classList.toggle('entry-mode', entering);
+  document.body.classList.toggle('victory-mode', winning);
+  document.body.classList.toggle('mobile-ui', mobileMode);
+  document.body.classList.toggle('playing', playing);
+  document.body.classList.toggle('paused', playing && paused);
+  document.body.classList.toggle('portrait-blocked', portraitBlocked);
+  document.body.classList.toggle('mobile-launch', showLaunch);
+  if (pauseButton) pauseButton.textContent = paused ? 'RESUME' : 'PAUSE';
   if (entering) syncEntryInput(forceFocus || uiState !== state);
   else if (nameInput) nameInput.blur();
   updateSideMenu();
   uiState = state;
+  if (stateChanged) rescale();
 }
-function enterHighScoreEntry() {
-  entry_name = '';
+function enterHighScoreEntry(replay) {
+  entry_name = pilotName;
   typedQueue.length = 0;
   entrySubmitted = false;
+  entryNameError = false;
+  entryReplay = !!replay;
   state = ST_ENTRY;
   syncHtmlUi(true);
 }
 function backspaceEntry() {
   if (state !== ST_ENTRY || entrySubmitted) return;
   entry_name = entry_name.slice(0, -1);
+  entryNameError = false;
   syncEntryInput(false);
 }
 function submitEntry(replay) {
   if (state !== ST_ENTRY || entrySubmitted) return;
+  const savedName = cleanName(entry_name);
+  if (!savedName) {
+    entryNameError = true;
+    set_msg('NAME REQUIRED');
+    syncEntryInput(true);
+    return;
+  }
   entrySubmitted = true;
-  const savedName = cleanName(entry_name) || 'PLAYER';
+  pilotName = savedName;
   entry_name = savedName;
   syncEntryInput(false);
   hi_insert(entry_rank, savedName, score);
   hi_save();
   submitScore(savedName, score);
-  if (replay) begin_run();
+  if (replay || entryReplay) begin_run();
   else state = ST_SCORES;
   syncHtmlUi(false);
 }
+function finishVictoryRun() {
+  finish_wave(); remember_run();
+  entry_rank = hi_qualifies(score);
+  snd_music_set(MUS_TITLE);
+  if (entry_rank >= 0) enterHighScoreEntry(false);
+  else { state = ST_SCORES; syncHtmlUi(false); }
+}
+function continueFreeplay() {
+  win_pending = 0; finish_wave(); start_wave();
+  state = ST_PLAY; paused = false; snd_music_game(bosses_defeated); clearInput(); syncHtmlUi(false);
+}
+function playSuspended() {
+  return state === ST_PLAY && (paused || mobileOrientationSuspended);
+}
 function step() {
   if (key_hit('M')) snd_music_toggle();
-  if (!(state === ST_PLAY && paused)) frame++;
-  if (state === ST_PLAY && key_hit('P')) { paused = !paused; snd_pause(paused); }
-  if (state !== ST_PLAY || !paused) { update_stars(); update_dust(); }
+  if (!playSuspended()) frame++;
+  if (state === ST_PLAY && key_hit('P')) {
+    paused = !paused;
+    snd_pause(paused || mobileOrientationSuspended);
+  }
+  if (!playSuspended()) { update_stars(); update_dust(); }
 
   switch (state) {
   case ST_TITLE:
@@ -2735,28 +2912,36 @@ function step() {
     if (key_hit('ESC') || key_hit('H')) state = ST_TITLE;
     break;
   case ST_PLAY:
-    if (paused && key_hit('SPACE')) { paused = false; snd_pause(false); }   /* space resumes */
-    if (!paused) update_play();
+    if (paused && key_hit('SPACE')) {
+      paused = false;
+      snd_pause(mobileOrientationSuspended);
+    }
+    if (!playSuspended()) update_play();
     if (win_pending) {
       remember_run();
       snd_music_set(MUS_WIN);
-      state = ST_WIN;
+      state = ST_WIN; win_t = 0;
       clearInput();
       break;
     }
-    if (key_hit('ESC')) { paused = !paused; snd_pause(paused); }
+    if (key_hit('ESC')) {
+      paused = !paused;
+      snd_pause(paused || mobileOrientationSuspended);
+    }
     if (!player.alive) {
       remember_run();
       snd_music_set(MUS_TITLE);
       over_timer = 160;
+      key_hit('SPACE');                 /* held fire never advances Game Over */
+      key_hit('ENTER');
       state = ST_OVER;
     }
     break;
   case ST_OVER:
     if (over_timer > 0) over_timer--;
-    if ((over_timer <= 130 && (key_hit('SPACE') || key_hit('ENTER'))) || over_timer === 0) {
+    if ((over_timer <= 130 && key_hit('ENTER')) || over_timer === 0) {
       entry_rank = hi_qualifies(score);
-      if (entry_rank >= 0) enterHighScoreEntry();
+      if (entry_rank >= 0) enterHighScoreEntry(true);
       else state = ST_SCORES;
     }
     break;
@@ -2775,15 +2960,10 @@ function step() {
     if (key_hit('CTRL')) begin_run();
     break;
   case ST_WIN:
-    if (key_hit('ESC')) { state = ST_TITLE; snd_music_set(MUS_TITLE); clearInput(); }
-    if (key_hit('SPACE') || key_hit('ENTER') || key_hit('CTRL')) {
-      win_pending = 0;
-      finish_wave();
-      start_wave();
-      state = ST_PLAY; paused = false;
-      snd_music_game(bosses_defeated);
-      clearInput();
-    }
+    win_t++;
+    if (win_t < 90 && win_t % 24 === 0) snd_sfx(SFX_PHASE);
+    if (win_t >= 90 && key_hit('ESC')) { finishVictoryRun(); clearInput(); }
+    if (win_t >= 90 && (key_hit('SPACE') || key_hit('ENTER') || key_hit('CTRL'))) continueFreeplay();
     break;
   }
 
@@ -2803,7 +2983,7 @@ function step() {
   }
   if (musicMuted) text_draw(SCRW-32, 182, 'MUS', C_LRED);
   if (sfxMuted)   text_draw(SCRW-32, 190, 'SFX', C_LRED);
-  if (!paused || state !== ST_PLAY) {
+  if (!playSuspended()) {
     if ((frame & 3) === 0) vga_cycle_palette();
   }
   syncHtmlUi(false);
@@ -2813,8 +2993,38 @@ function step() {
 const wrapEl = document.getElementById('wrap');
 const canvas = document.getElementById('screen');
 const nameInput = document.getElementById('nameInput');
+const joystick = document.getElementById('joystick');
+const joystickKnob = document.getElementById('joystickKnob');
+const pauseButton = document.getElementById('pauseButton');
 const ctx = canvas.getContext('2d');
 const imageData = ctx.createImageData(SCRW, SCRH);
+const coarsePointer = window.matchMedia('(hover: none), (pointer: coarse)');
+const urlParams = new URLSearchParams(window.location.search);
+const mobileOverride = urlParams.get('mobile') === '1';
+const mobileMove = { active:false, pointerId:null, x:0, y:0 };
+let mobileMode = coarsePointer.matches || mobileOverride;
+let mobileLaunchDismissed = !mobileMode;
+
+function isPortraitMobile() {
+  return mobileMode && window.innerHeight > window.innerWidth;
+}
+function resetMobileMove() {
+  mobileMove.active = false;
+  mobileMove.pointerId = null;
+  mobileMove.x = 0;
+  mobileMove.y = 0;
+  if (joystickKnob) joystickKnob.style.transform = 'translate(-50%, -50%)';
+}
+function updateMobileMode() {
+  const next = coarsePointer.matches || mobileOverride;
+  if (next !== mobileMode) {
+    mobileMode = next;
+    mobileLaunchDismissed = !mobileMode;
+    clearInput();
+  }
+  syncHtmlUi(false);
+  rescale();
+}
 
 function present() {
   const px = imageData.data;
@@ -2842,9 +3052,15 @@ function fullscreenSupported() {
 function showUiStatus(s) { setScoreStatus(s); set_msg(s); }
 function updateFullscreenButtons() {
   const supported = fullscreenSupported();
+  const active = !!fullscreenElement();
   document.querySelectorAll('[data-action="fullscreen"]').forEach(btn => {
     btn.disabled = !supported;
-    btn.title = supported ? 'Fullscreen' : 'Fullscreen unavailable';
+    btn.textContent = active ? 'EXIT FULLSCREEN' : 'FULLSCREEN';
+    btn.title = supported ? (active ? 'Exit fullscreen' : 'Fullscreen') : 'Fullscreen unavailable';
+  });
+  document.querySelectorAll('[data-action="play-fullscreen"]').forEach(btn => {
+    btn.disabled = !supported;
+    btn.title = supported ? 'Play fullscreen' : 'Fullscreen unavailable - rotate manually';
   });
 }
 function lockLandscape() {
@@ -2864,6 +3080,8 @@ function toggleFullscreen() {
       if (p && p.catch) p.catch(() => showUiStatus('FULLSCREEN FAILED'));
       unlockOrientation();
     } else {
+      mobileLaunchDismissed = true;
+      syncHtmlUi(false);
       const target = fullscreenTarget();
       const req = target.requestFullscreen || target.webkitRequestFullscreen;
       const p = req.call(target);
@@ -2875,9 +3093,18 @@ function toggleFullscreen() {
   }
   setTimeout(() => { rescale(); updateFullscreenButtons(); }, 80);
 }
-window.addEventListener('resize', rescale);
-document.addEventListener('fullscreenchange', () => { rescale(); updateFullscreenButtons(); });
-document.addEventListener('webkitfullscreenchange', () => { rescale(); updateFullscreenButtons(); });
+function fullscreenChanged() {
+  if (fullscreenElement()) mobileLaunchDismissed = true;
+  syncHtmlUi(false);
+  rescale();
+  updateFullscreenButtons();
+}
+window.addEventListener('resize', () => { syncHtmlUi(false); rescale(); });
+window.addEventListener('orientationchange', () => setTimeout(updateMobileMode, 60));
+if (coarsePointer.addEventListener) coarsePointer.addEventListener('change', updateMobileMode);
+else if (coarsePointer.addListener) coarsePointer.addListener(updateMobileMode);
+document.addEventListener('fullscreenchange', fullscreenChanged);
+document.addEventListener('webkitfullscreenchange', fullscreenChanged);
 /* Mouse: left button fires, right button boosts, and the ship follows the
    cursor while it is over the play area. Touch/pen keep the drag-to-steer feel
    (the on-screen buttons handle fire/boost there). */
@@ -2892,13 +3119,18 @@ function syncMouseButtons(e) {
 }
 canvas.addEventListener('pointerdown', (e) => {
   bootAudio();
+  if (state === ST_ENTRY) {
+    syncEntryInput(true);
+    e.preventDefault();
+    return;
+  }
   if (state === ST_TITLE) {
     tapKey('SPACE');
     e.preventDefault();
     return;
   }
   if (state === ST_PLAY && paused) {   /* click the screen to resume */
-    paused = false; snd_pause(false);
+    paused = false; snd_pause(mobileOrientationSuspended);
     e.preventDefault();
     return;
   }
@@ -2950,6 +3182,54 @@ canvas.addEventListener('pointercancel', (e) => {
   endPointerAim(e);
 });
 
+function updateJoystick(e) {
+  if (!joystick || mobileMove.pointerId !== e.pointerId) return;
+  const r = joystick.getBoundingClientRect();
+  const radius = r.width * 0.5;
+  const limit = radius * 0.58;
+  let dx = e.clientX - (r.left + radius);
+  let dy = e.clientY - (r.top + radius);
+  const distance = Math.hypot(dx, dy);
+  if (distance > limit) {
+    dx = dx * limit / distance;
+    dy = dy * limit / distance;
+  }
+  const nx = dx / limit;
+  const ny = dy / limit;
+  const dead = 0.24;
+  mobileMove.x = nx < -dead ? -1 : nx > dead ? 1 : 0;
+  mobileMove.y = ny < -dead ? -1 : ny > dead ? 1 : 0;
+  if (joystickKnob) {
+    joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  }
+}
+function endJoystick(e) {
+  if (mobileMove.pointerId !== e.pointerId) return;
+  resetMobileMove();
+  e.preventDefault();
+}
+if (joystick) {
+  joystick.addEventListener('pointerdown', (e) => {
+    if (!mobileMode || state !== ST_PLAY || mobileMove.active) return;
+    bootAudio();
+    mobileMove.active = true;
+    mobileMove.pointerId = e.pointerId;
+    try { joystick.setPointerCapture(e.pointerId); } catch (_) {}
+    updateJoystick(e);
+    e.preventDefault();
+  });
+  joystick.addEventListener('pointermove', (e) => {
+    if (mobileMove.pointerId !== e.pointerId) return;
+    updateJoystick(e);
+    e.preventDefault();
+  });
+  joystick.addEventListener('pointerup', endJoystick);
+  joystick.addEventListener('pointercancel', endJoystick);
+  joystick.addEventListener('lostpointercapture', (e) => {
+    if (mobileMove.pointerId === e.pointerId) resetMobileMove();
+  });
+}
+
 function wireButton(btn) {
   const hold = btn.dataset.hold;
   const tap = btn.dataset.tap;
@@ -2960,10 +3240,22 @@ function wireButton(btn) {
     if (hold) pressKey(hold);
     if (tap) tapKey(tap);
     if (action === 'fullscreen') toggleFullscreen();
+    else if (action === 'play-fullscreen') {
+      mobileLaunchDismissed = true;
+      syncHtmlUi(false);
+      toggleFullscreen();
+    }
+    else if (action === 'continue-windowed') {
+      mobileLaunchDismissed = true;
+      syncHtmlUi(false);
+      rescale();
+    }
     else if (action === 'newgame') begin_run();
     else if (action === 'music') snd_music_toggle();
     else if (action === 'sfx') snd_sfx_toggle();
     else if (action === 'scores') showScores();
+    else if (action === 'freeplay') { if (state === ST_WIN && win_t >= 90) continueFreeplay(); }
+    else if (action === 'save-title') { if (state === ST_WIN && win_t >= 90) finishVictoryRun(); }
     if (entry === 'BKSP') backspaceEntry();
     if (entry === 'ENTER') submitEntry(false);
     btn.setPointerCapture(e.pointerId);
@@ -2981,6 +3273,7 @@ document.querySelectorAll('[data-hold], [data-tap], [data-action], [data-entry]'
 if (nameInput) {
   nameInput.addEventListener('input', () => {
     entry_name = cleanName(nameInput.value);
+    entryNameError = false;
     if (nameInput.value !== entry_name) nameInput.value = entry_name;
   });
   nameInput.addEventListener('keydown', (e) => {
@@ -3005,7 +3298,6 @@ function updateAudioButtons() {
 }
 /* Touch layouts own the whole control surface. Desktop keeps the menu rail on
    menu screens only, never during play or fullscreen. */
-const coarsePointer = window.matchMedia('(hover: none), (pointer: coarse)');
 const fsMedia = window.matchMedia('(display-mode: fullscreen)');
 /* True for both the Fullscreen API (requestFullscreen) and native/F11 browser
    fullscreen. F11 never sets document.fullscreenElement, but it does match the
@@ -3016,7 +3308,7 @@ function isViewportFullscreen() {
 }
 function updateSideMenu() {
   const inPlay = state === ST_PLAY && !paused;
-  const hide = coarsePointer.matches || window.innerWidth <= 720 || inPlay || isViewportFullscreen();
+  const hide = coarsePointer.matches || window.innerWidth <= 720 || inPlay || state === ST_WIN || state === ST_ENTRY || isViewportFullscreen();
   document.body.classList.toggle('hide-side-menu', hide);
 }
 
@@ -3047,6 +3339,12 @@ init_stars();
 init_dust();
 gen_nebula();
 snd_music_set(MUS_TITLE);
+if (urlParams.get('shot') === 'win') {
+  score = 987650; player.max_combo = 42; bosses_defeated = 15;
+  state = ST_WIN; win_t = 140; mobileLaunchDismissed = true; snd_music_set(MUS_WIN);
+} else if (urlParams.get('shot') === 'entry') {
+  score = 987650; entry_rank = 0; mobileLaunchDismissed = true; enterHighScoreEntry(false);
+}
 updateFullscreenButtons();
 updateAudioButtons();
 syncHtmlUi(false);

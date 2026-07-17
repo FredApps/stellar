@@ -2,12 +2,13 @@
 
 Stellar is a vertically scrolling VGA space shooter for period PC hardware:
 an Intel 486, MS-DOS, VGA mode 13h, and a PC speaker. It is written in C for
-16-bit real mode with Open Watcom. The current DOS executable is about 100 KB;
+16-bit real mode with Open Watcom. The current DOS executable is 128,122 bytes;
 the release floppy image is exactly 1,474,560 bytes, the standard 1.44 MB FAT12
 floppy size. The browser port is included in `web/` for local or self-hosted deployment.
 
 ![Title screen](dist/title.png)
 ![Gameplay](dist/screenshot.png)
+![Campaign complete](dist/victory.png)
 
 ## Links
 
@@ -23,11 +24,16 @@ floppy size. The browser port is included in `web/` for local or self-hosted dep
 - Weighted enemy waves, formation spawns, elite variants, and fifteen authored
   campaign bosses with unique silhouettes, movement bands, and attack patterns.
 - Persistent weapon upgrades, homing missiles, smart bombs, Shift boost with
-  a boost bar, graze bonuses, combo multipliers, medals, and risk pickups.
+  a boost bar, shield ramming, graze bonuses, combo multipliers, adaptive drops,
+  medals, and risk pickups.
+- Clear four-level weapon progression: Laser gains one piercing lane per level,
+  Wave widens from 5 to 11 shots, and marked boss supply escorts carry upgrades.
 - Easy, Normal, and Hard difficulties share one high-score table; harder modes
   apply higher score multipliers.
 - Sixteen PC-speaker chapter themes, changing after every boss, plus priority-mixed sound effects.
 - Top-8 high-score table saved to `HISCORE.DAT`.
+- Animated campaign-complete scene after the wave-60 Overlord, with optional
+  freeplay whose boss durability is capped at the wave-60 level.
 - No FPU required; it runs on a 486SX as well as a DX.
 
 ## Hardware Compatibility
@@ -61,7 +67,7 @@ and a standard 1.44 MB FAT12 floppy image.
 | OS | MS-DOS 3.3 or later, Windows 9x DOS mode, FreeDOS, or DOSBox-X |
 | Video | VGA mode 13h compatible adapter |
 | Sound | PC speaker optional |
-| Storage | `STELLAR.EXE` is about 47 KB; release floppy image is exactly 1.44 MB |
+| Storage | `STELLAR.EXE` is 128,122 bytes; release floppy image is exactly 1.44 MB |
 
 ## Browser Port
 

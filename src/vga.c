@@ -84,7 +84,11 @@ int vga_init(void)
     union REGS r;
     g_back = (u8 __far *)_fmalloc(SCRSZ);
     g_bg   = (u8 __far *)_fmalloc(SCRSZ);
-    if (!g_back || !g_bg) return 1;
+    if (!g_back || !g_bg) {
+        if (g_back) { _ffree(g_back); g_back = 0; }
+        if (g_bg)   { _ffree(g_bg);   g_bg = 0; }
+        return 1;
+    }
     _fmemset(g_bg, C_BLACK, SCRSZ);
     vga_mem = MKFP(0xA000, 0);
     r.w.ax = 0x0013;            /* set 320x200x256 */

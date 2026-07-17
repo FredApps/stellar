@@ -94,6 +94,11 @@ typedef unsigned char  bool;
 #define E_SHOOTER 2   /* returns fire             */
 #define E_BOSS    3   /* handled separately       */
 
+/* upgrade-drop provenance for enemies */
+#define DROP_NORMAL  0
+#define DROP_SUPPORT 1
+#define DROP_SUPPLY  2
+
 /* pool sizes */
 #define MAX_PBULLET  48
 #define MAX_EBULLET  64
@@ -119,6 +124,7 @@ typedef struct {
     i16 firecd;          /* fire cooldown                */
     u8  elite;           /* rare stronger variant        */
     u8  mode;            /* movement / formation mode    */
+    u8  drop_class;      /* DROP_* escort reward class   */
     i16 aux;             /* mode timer or direction      */
 } Enemy;
 
@@ -148,6 +154,7 @@ typedef struct {
     i16 combo;           /* current kill combo              */
     i16 combo_t;         /* frames until combo resets       */
     i16 max_combo;       /* best combo this run             */
+    i16 ram_cd;          /* shield-ram repeat protection    */
     bool boosting;
     bool facing_down;    /* boss is below: rotate and fire down */
     bool alive;

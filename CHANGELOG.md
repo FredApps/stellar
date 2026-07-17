@@ -11,6 +11,12 @@ matching section in this file.
 - Smoothed the opening Gorgon fight with lower HP, a longer slam tell, and difficulty-specific curtains.
 - Restored the browser Wave-Laser boost behavior and corrected difficulty-scaled score popups.
 - Removed duplicate mobile control rails and kept one fullscreen control outside the playfield.
+- Made Laser levels visibly progress from one to four piercing lanes and clarified how G upgrades
+  Laser, Wave, and Cannon in the help screen and pickup feedback.
+- Boss support squads now identify a supply escort with a guaranteed upgrade drop; remaining escorts
+  have higher difficulty-scaled drop odds while the four-drop encounter cap remains in place.
+- Game Over now ignores Space so held fire cannot skip the result screen, and help identifies the
+  blinking cyan/white enemy frame as the elite marker.
 
 ## v0.1.3 - 2026-07-10
 

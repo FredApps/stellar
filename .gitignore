@@ -18,9 +18,11 @@
 /BOSSES.BMP
 /BOSSES1.BMP
 /BOSSES2.BMP
+/WIN.BMP
 /AUDIO.TXT
 /BENCH.TXT
 /SELFTEST.TXT
+/web/web.config
 /HISCORE.DAT
 
 # Generated release artifacts

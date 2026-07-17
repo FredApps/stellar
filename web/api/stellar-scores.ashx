@@ -35,21 +35,44 @@ public class StellarScoresHandler : IHttpHandler
             }
             WriteError(context, 405, "Method not allowed.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            WriteError(context, 500, ex.GetType().Name + ": " + ex.Message);
+            WriteError(context, 500, "Internal server error.");
         }
     }
 
     private static void HandlePost(HttpContext context)
     {
         Dictionary<string, object> payload;
+        if (context.Request.ContentLength > 4096)
+        {
+            WriteError(context, 413, "Request body too large.");
+            return;
+        }
         using (var reader = new StreamReader(context.Request.InputStream))
         {
             var body = reader.ReadToEnd();
-            payload = String.IsNullOrWhiteSpace(body)
-                ? new Dictionary<string, object>()
-                : Json.Deserialize<Dictionary<string, object>>(body);
+            if (body.Length > 4096)
+            {
+                WriteError(context, 413, "Request body too large.");
+                return;
+            }
+            try
+            {
+                payload = String.IsNullOrWhiteSpace(body)
+                    ? new Dictionary<string, object>()
+                    : Json.Deserialize<Dictionary<string, object>>(body);
+            }
+            catch (ArgumentException)
+            {
+                WriteError(context, 400, "Invalid JSON body.");
+                return;
+            }
+            catch (InvalidOperationException)
+            {
+                WriteError(context, 400, "Invalid JSON body.");
+                return;
+            }
         }
         if (payload == null) payload = new Dictionary<string, object>();
 

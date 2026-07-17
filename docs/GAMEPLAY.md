@@ -19,8 +19,8 @@ native gameplay pacing of about 35 FPS.
 
 ## Objective
 
-Stellar Assault is an endless arcade score chase. Clear waves, survive boss attacks, graze danger,
-build combos, earn medals, and push the high-score table as far as you can.
+Stellar Assault is a 60-wave arcade campaign with optional freeplay after victory. Clear waves,
+survive boss attacks, graze danger, build combos, earn medals, and push the high-score table.
 
 After game over, the title/scores flow shows last-run stats: wave reached, max combo, and bosses
 defeated.
@@ -45,6 +45,10 @@ at least 12 energy is available. The HUD shows the `BST` bar beside missiles and
 During a boss fight, crossing above the boss turns the ship downward. Cannon, Laser, Wave, and
 homing missiles all follow the new facing; the ship turns upward again after crossing below the boss.
 
+While Shield is active, body-checking a small enemy destroys it normally. Ramming a boss deals
+one tenth of its maximum HP and bounces the ship away; a short cooldown prevents repeated contact
+from applying the damage every frame.
+
 ## Waves And Enemies
 
 Normal waves spawn `5 + wave` enemies, capped at 18. Hard adds 4 more. Enemies can arrive as a
@@ -61,6 +65,7 @@ Every four-wave block changes palette and wave personality:
 
 From wave 7 onward, rare elite enemies appear. Normal elite chance is 12%, rising to 18% after
 wave 12 and 22% from wave 20. Easy reduces those chances by 4 points; Hard adds 5 points.
+Elite enemies are identified in play by a blinking cyan/white box around their ship.
 Enemy fall speed gains a step after wave 6 and another after wave 24.
 
 Enemies never stack: spawn positions avoid fresh spawns, and a light separation pass nudges
@@ -104,10 +109,16 @@ silhouette, movement language, and attack script:
 | W60 | Overlord | Finale: figure-eight, then Phantom blinks, then Seeker orbit + Reaper dives |
 
 The opening sector and each of the fifteen post-boss sectors have distinct music. The W60 Overlord
-ends the campaign with the win screen and custom win theme.
+ends the campaign with an animated campaign-complete scene and custom win theme. Saving and returning
+finalizes the score; Freeplay continues the run. Freeplay boss HP is capped at the wave-60 durability
+level while attack and support pressure continue.
 
-Defeating a boss drops three pickups — a Life, a Bomb, and a Missile pack. Unused bombs after boss
-waves grant +400 each.
+Bosses call bounded support groups, with Leviathan and Kraken launching larger carrier squads.
+The marked supply escort in each squad guarantees an upgrade when destroyed; the remaining escorts
+have Easy 55%, Normal 50%, and Hard 45% drop chances. Each boss encounter still allows at most four
+support drops.
+Defeating a boss always drops Missiles plus two need-aware rewards: recovery/weapon help and a Bomb
+or score gem. Unused bombs after boss waves grant +400 each.
 
 ## Weapons
 
@@ -117,34 +128,37 @@ to Cannon.
 | Weapon | Pickup | Role |
 |--------|--------|------|
 | Cannon | default / G upgrades | All-round spread, damage 1 |
-| Laser | Z pickup | Fewer lanes, piercing, damage 2 |
-| Wave | W pickup | Wide crowd control, damage 1, slower cooldown |
+| Laser | Z pickup | Levels 1-4 fire 1/2/3/4 piercing lanes, damage 2 per beam |
+| Wave | W pickup | Levels 1-4 widen to 5/7/9/11 shots, damage 1, slower cooldown |
 
 Rapid fire (`R`) temporarily reduces weapon cooldown.
+The G pickup upgrades whichever weapon is currently equipped. Collecting Z while Wave is equipped
+keeps Wave active and grants a ten-second piercing Wave boost, shown as `WAVE*` on the HUD.
 
 ## Missiles, Bombs, And Pickups
 
 Missiles start at 5 ammo and cap at 30 (two-digit HUD counter). Each missile steers toward the
 nearest target ahead of it and explodes with area damage (4 to enemies in a 52 px blast, and
-**1/12 of a boss's max HP** — missiles remain the boss-killer tool, but a boss now takes 12 of
-them). Bosses always drop an M pickup on death.
+**1/10 of a boss's max HP**). Bosses always drop an M pickup on death.
 
-Smart bombs clear enemy bullets, damage all enemies, and deal 1/4 of a boss's max HP. Bombs also
+Smart bombs clear enemy bullets, damage all enemies, and deal 1/3 of a boss's max HP. Bombs also
 score +25 per bullet cleared and +100 per enemy killed by the bomb.
 
 | Icon | Type | Effect |
 |------|------|--------|
-| G | Gun | +1 gun level, up to 4 |
+| G | Gun | +1 level for the equipped Cannon, Laser, or Wave, up to 4 |
 | R | Rapid | Timed fast fire |
 | H | Shield | ~10 seconds of full invulnerability; blinks before expiring |
 | L | Life | +1 ship, up to 9 |
 | M | Missiles | +4 missile ammo, up to 30 |
-| Z | Laser | Switches main weapon to Laser |
+| Z | Laser | Switches to Laser, or boosts an equipped Wave for ten seconds |
 | W | Wave | Switches main weapon to Wave |
 | B | Bomb | +1 smart bomb, up to 10 |
 | $ | Score | Risk pickup worth 500 + 50 per wave, plus pickup points |
 
 The score pickup appears near the upper-mid playfield after a 10+ kill combo streak.
+Ordinary drops are weighted toward current shortages. Capped Gun, Life, Missile, or Bomb pickups
+convert into +300 points instead of being wasted.
 
 ## Scoring
 

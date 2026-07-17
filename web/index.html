@@ -3,10 +3,16 @@
 <head>
 <meta charset="utf-8">
 <title>Stellar Assault</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>
+  :root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+  }
   html, body {
-    margin: 0; padding: 0; height: 100%;
+    margin: 0; padding: 0; width: 100%; height: 100%;
     background: #000; overflow: hidden;
     font-family: 'Courier New', monospace;
     color: #cdf;
@@ -27,59 +33,6 @@
     touch-action: none;
     cursor: crosshair;
   }
-  #fsbtn {
-    position: fixed; right: 10px; top: 10px; z-index: 5;
-    display: none;
-    background: #111; color: #9be; border: 1px solid #345;
-    font-family: inherit; font-size: 13px; padding: 6px 10px; cursor: pointer;
-    min-width: 112px; text-align: center; white-space: nowrap;
-    opacity: 0.75;
-  }
-  #fsbtn:hover { opacity: 1; }
-  #sideMenu {
-    position: fixed; left: 10px; top: 50%; transform: translateY(-50%);
-    z-index: 6; display: flex; flex-direction: column; gap: 7px; width: 128px;
-  }
-  #sideMenu button,
-  #sideMenu .button-link {
-    min-height: 34px; font-size: 12px; letter-spacing: 1px;
-    display: flex; align-items: center; justify-content: center;
-    padding: 0 8px; opacity: 0.9;
-  }
-  #sideMenu button:hover,
-  #sideMenu .button-link:hover { opacity: 1; }
-  button.off, .button-link.off {
-    color: #ffb0d8; border-color: #914577; background: #20101d;
-  }
-  #sideMenu .primary {
-    color: #fff6b0; border-color: #9a8538; background: #221a07;
-  }
-  body.hide-side-menu #sideMenu { display: none; }
-  #boot {
-    position: fixed; inset: 0; z-index: 10;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background:
-      radial-gradient(circle at 50% 20%, rgba(40,90,130,.32), transparent 34%),
-      linear-gradient(#02050a, #000);
-    color: #cdf; text-align: center; padding: 16px;
-    box-sizing: border-box;
-  }
-  .boot-card {
-    width: min(520px, calc(100vw - 28px));
-    border: 2px solid #345;
-    background: rgba(2, 8, 16, .94);
-    box-shadow: 0 0 0 3px #000, 0 0 32px rgba(72,190,255,.18);
-    padding: 18px;
-  }
-  #boot h1 { color: #fe6; letter-spacing: 3px; font-size: clamp(23px, 6vw, 34px); margin: 0 0 12px; }
-  #boot p  { margin: 5px 0; color: #9ab7c8; font-size: 13px; line-height: 1.35; }
-  #boot .score-status { color: #8fd; margin-top: 12px; }
-  .boot-actions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 16px;
-  }
   button,
   .button-link {
     font-family: inherit;
@@ -95,32 +48,149 @@
   }
   button:active,
   .button-link:active { background: #174462; color: #fff; transform: translateY(1px); }
-  .boot-actions button,
-  .boot-actions .button-link {
-    min-height: 38px; font-size: 13px;
+  button:disabled { opacity: .45; cursor: default; }
+  button.off, .button-link.off {
+    color: #ffb0d8; border-color: #914577; background: #20101d;
+  }
+  .primary { color: #fff6b0; border-color: #9a8538; background: #221a07; }
+  .danger { color: #ffd4ef; border-color: #914577; background: #20101d; }
+
+  #sideMenu {
+    position: fixed; left: 10px; top: 50%; transform: translateY(-50%);
+    z-index: 6; display: flex; flex-direction: column; gap: 7px; width: 128px;
+  }
+  #sideMenu button,
+  #sideMenu .button-link {
+    min-height: 34px; font-size: 12px; letter-spacing: 1px;
     display: flex; align-items: center; justify-content: center;
-    padding: 0 8px;
+    padding: 0 8px; opacity: .9;
   }
-  #touchControls {
-    position: fixed; z-index: 6; left: 10px; right: 10px; bottom: 10px;
-    display: none;
-    grid-template-columns: 1.35fr 1fr 1fr 1fr .82fr .82fr .82fr .82fr;
-    gap: 8px;
+  #sideMenu button:hover,
+  #sideMenu .button-link:hover { opacity: 1; }
+  body.hide-side-menu #sideMenu { display: none; }
+  body.mobile-ui #sideMenu { display: none !important; }
+  body:not(.hide-side-menu):not(.mobile-ui) #wrap { left: 148px; }
+
+  #mobileFullscreen,
+  #mobileControls,
+  #mobileLaunch,
+  #rotateGate,
+  #entryControls,
+  #victoryControls { display: none; }
+
+  #mobileFullscreen {
+    position: fixed;
+    z-index: 18;
+    top: calc(var(--safe-top) + 8px);
+    right: calc(var(--safe-right) + 8px);
+    min-width: 112px;
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 11px;
+    letter-spacing: 0;
+    opacity: .88;
   }
-  #touchControls button {
-    min-height: 48px;
-    padding: 0 6px;
-    font-size: 14px;
-    color: #dff7ff;
+  body.mobile-ui #mobileFullscreen { display: block; }
+  body.mobile-ui.mobile-launch #mobileFullscreen,
+  body.mobile-ui.portrait-blocked #mobileFullscreen { display: none; }
+
+  .mobile-overlay {
+    position: fixed; inset: 0;
+    align-items: center; justify-content: center;
+    box-sizing: border-box;
+    padding: calc(var(--safe-top) + 16px) calc(var(--safe-right) + 16px)
+             calc(var(--safe-bottom) + 16px) calc(var(--safe-left) + 16px);
+    background: rgba(0, 3, 8, .96);
+    text-align: center;
   }
-  #touchControls .primary { color: #fff6b0; border-color: #9a8538; background: #221a07; }
-  #touchControls .danger { color: #ffd4ef; border-color: #914577; background: #20101d; }
-  #touchControls .compact { font-size: 12px; letter-spacing: 0; }
-  #touchControls .entry-only { display: none; }
-  body.entry-mode #touchControls .entry-only { display: block; }
+  #mobileLaunch { z-index: 20; }
+  #rotateGate { z-index: 22; }
+  body.mobile-ui.mobile-launch #mobileLaunch,
+  body.mobile-ui.portrait-blocked #rotateGate { display: flex; }
+  body.mobile-ui.mobile-launch #rotateGate { display: none; }
+  .mobile-panel {
+    width: min(460px, calc(100vw - 32px));
+    border: 2px solid #345;
+    background: #020810;
+    box-shadow: 0 0 0 3px #000, 0 0 28px rgba(72, 190, 255, .16);
+    padding: 18px;
+    box-sizing: border-box;
+  }
+  .mobile-panel h1,
+  .mobile-panel h2 {
+    color: #fe6; letter-spacing: 2px; margin: 0 0 10px;
+    font-size: clamp(19px, 5vw, 28px);
+  }
+  .mobile-panel p { margin: 6px 0; color: #9ab7c8; font-size: 12px; line-height: 1.4; }
+  .mobile-actions {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px;
+  }
+  .mobile-actions button,
+  .mobile-actions .button-link {
+    min-height: 42px; padding: 0 10px; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #rotateGate .mobile-actions { grid-template-columns: 1fr; }
+
+  body.mobile-ui.playing:not(.portrait-blocked):not(.mobile-launch) #wrap {
+    left: clamp(112px, 18vw, 160px);
+    right: clamp(112px, 18vw, 160px);
+  }
+  body.mobile-ui.victory-mode:not(.portrait-blocked) #wrap {
+    left: clamp(148px, 19vw, 168px);
+    right: clamp(148px, 19vw, 168px);
+  }
+  body.mobile-ui.playing:not(.portrait-blocked):not(.mobile-launch) #mobileControls { display: block; }
+  #mobileControls { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+  #joystick {
+    position: absolute;
+    left: calc(var(--safe-left) + 12px);
+    bottom: calc(var(--safe-bottom) + 12px);
+    width: clamp(88px, 26vh, 124px);
+    height: clamp(88px, 26vh, 124px);
+    border-radius: 50%;
+    border: 2px solid #2b6682;
+    background: rgba(7, 19, 31, .82);
+    box-shadow: inset 0 0 0 2px #000;
+    pointer-events: auto;
+    touch-action: none;
+  }
+  #joystick::before,
+  #joystick::after {
+    content: ''; position: absolute; background: rgba(110, 190, 225, .22);
+    pointer-events: none;
+  }
+  #joystick::before { left: 50%; top: 12%; bottom: 12%; width: 1px; }
+  #joystick::after { top: 50%; left: 12%; right: 12%; height: 1px; }
+  #joystickKnob {
+    position: absolute; left: 50%; top: 50%;
+    width: 42%; height: 42%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 2px solid #8ac5de;
+    background: #12334a;
+    box-shadow: inset 0 0 0 2px #000;
+    pointer-events: none;
+  }
+  #rightControls {
+    position: absolute;
+    right: calc(var(--safe-right) + 10px);
+    bottom: calc(var(--safe-bottom) + 10px);
+    width: clamp(96px, 15vw, 126px);
+    display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+    pointer-events: none;
+  }
+  #rightControls button { pointer-events: auto; }
+  #rightControls .compact-action { min-height: 34px; font-size: 11px; }
+  #boostButton {
+    min-height: clamp(58px, 17vh, 78px);
+    font-size: 15px;
+    font-weight: bold;
+  }
+
   #nameInput {
     display: none;
-    position: fixed; z-index: 7; left: 50%; bottom: 122px;
+    position: fixed; z-index: 17; left: 50%; bottom: calc(var(--safe-bottom) + 58px);
     transform: translateX(-50%);
     width: min(192px, calc(100vw - 24px)); height: 34px;
     box-sizing: border-box; padding: 4px 8px;
@@ -129,81 +199,114 @@
     user-select: text; -webkit-user-select: text; touch-action: manipulation;
   }
   body.entry-mode #nameInput { display: block; }
-  html:fullscreen,
-  html:-webkit-full-screen {
-    width: 100%; height: 100%; background: #000;
+  body.mobile-ui.entry-mode #entryControls {
+    display: flex;
+    position: fixed; z-index: 18;
+    left: calc(var(--safe-left) + 12px);
+    right: calc(var(--safe-right) + 12px);
+    bottom: calc(var(--safe-bottom) + 10px);
+    justify-content: space-between;
+    pointer-events: none;
   }
+  #entryControls button { width: 104px; min-height: 40px; font-size: 12px; pointer-events: auto; }
+  body.mobile-ui.victory-mode #victoryControls {
+    display: flex; position: fixed; z-index: 18;
+    left: calc(var(--safe-left) + 12px); right: calc(var(--safe-right) + 12px);
+    bottom: calc(var(--safe-bottom) + 10px); justify-content: space-between;
+  }
+  #victoryControls button { min-width: 132px; min-height: 42px; font-size: 11px; }
+
+  html:fullscreen,
+  html:-webkit-full-screen,
   html:fullscreen body,
   html:-webkit-full-screen body {
     width: 100%; height: 100%; overflow: hidden; background: #000;
   }
-  html:fullscreen #fsbtn,
-  html:-webkit-full-screen #fsbtn {
-    display: none;
-  }
-  @media (max-width: 720px) {
-    #fsbtn { display: none; }
+
+  @media (hover: none), (pointer: coarse), (max-width: 720px) {
     #sideMenu { display: none !important; }
-    #wrap { inset: 0 0 108px 0; }
-    #touchControls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    #touchControls button { min-height: 46px; font-size: 12px; padding: 0 4px; }
-    #touchControls .compact { font-size: 10px; }
-    .boot-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
-  @media (hover: none), (pointer: coarse) {
-    #fsbtn { display: none; }
-    #sideMenu { display: none !important; }
-    #touchControls { display: grid; }
-    #wrap { inset: 0 0 108px 0; }
-  }
-  @media (orientation: landscape) and (max-height: 520px) {
-    #sideMenu { display: none !important; }
-    #wrap { inset: 0 166px 0 0; }
-    #touchControls {
-      left: auto; right: 8px; top: 8px; bottom: 8px; width: 146px;
-      display: grid;
-      grid-template-columns: 1fr;
-      align-content: center;
-      gap: 5px;
-    }
-    #touchControls button { min-height: 30px; font-size: 10px; padding: 0 3px; }
-    #touchControls .compact { font-size: 9px; }
-    #nameInput { left: calc((100vw - 166px) / 2); bottom: 10px; height: 30px; font-size: 18px; }
+  @media (orientation: portrait) {
+    #continueWindowed,
+    body.mobile-ui #mobileControls,
+    body.mobile-ui #entryControls,
+    body.mobile-ui #victoryControls { display: none !important; }
+    body.mobile-ui #nameInput { bottom: 18%; }
   }
   @media (orientation: landscape) and (max-height: 380px) {
-    #touchControls { gap: 4px; }
-    #touchControls button { min-height: 27px; font-size: 9px; }
-    #touchControls .compact { font-size: 8px; }
+    #mobileFullscreen { min-height: 29px; font-size: 9px; min-width: 94px; }
+    #rightControls { gap: 4px; width: clamp(88px, 14vw, 108px); }
+    #rightControls .compact-action { min-height: 28px; font-size: 9px; }
+    #boostButton { min-height: 52px; font-size: 12px; }
+    .mobile-panel { padding: 12px; }
+    .mobile-panel h1, .mobile-panel h2 { margin-bottom: 5px; font-size: 18px; }
+    .mobile-panel p { margin: 3px 0; font-size: 10px; }
+    .mobile-actions { margin-top: 9px; }
+    .mobile-actions button, .mobile-actions .button-link { min-height: 34px; font-size: 10px; }
   }
-  @keyframes blink { 50% { opacity: 0; } }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="screen" width="320" height="200"></canvas></div>
+
 <div id="sideMenu" aria-label="Menu">
   <button data-action="newgame" class="primary">NEW GAME</button>
   <button data-action="fullscreen">FULLSCREEN</button>
-  <button data-action="scores">HIGH SCORE</button>
+  <a class="button-link" href="highscore/">HIGH SCORE</a>
   <button data-tap="H">HELP</button>
   <button data-action="music">MUSIC</button>
   <button data-action="sfx">SFX</button>
   <a class="button-link" href="https://github.com/FredApps/Stellar" target="_blank" rel="noopener">GITHUB</a>
   <a class="button-link" href="https://github.com/FredApps/stellar/releases/latest" target="_blank" rel="noopener">MS-DOS</a>
 </div>
-<div id="touchControls" aria-label="Touch controls">
-  <button class="primary" data-hold="SPACE">FIRE</button>
-  <button data-hold="SHIFT">BOOST</button>
-  <button data-tap="CTRL">MSL</button>
-  <button class="danger" data-tap="B">BOMB</button>
-  <button data-tap="P">PAUSE</button>
-  <button data-action="music" class="compact">MUS</button>
-  <button data-action="sfx" class="compact">SFX</button>
-  <button data-tap="H">HELP</button>
-  <button class="compact" data-action="fullscreen">FULLSCREEN</button>
-  <button class="entry-only" data-entry="BKSP">BKSP</button>
-  <button class="entry-only primary" data-entry="ENTER">ENTER</button>
+
+<button id="mobileFullscreen" data-action="fullscreen">FULLSCREEN</button>
+
+<div id="mobileLaunch" class="mobile-overlay" aria-label="Mobile launch">
+  <div class="mobile-panel">
+    <h1>STELLAR ASSAULT</h1>
+    <p>LANDSCAPE FULLSCREEN RECOMMENDED</p>
+    <p>DRAG THE FIELD OR USE THE LEFT THUMB CONTROL</p>
+    <div class="mobile-actions">
+      <button id="playFullscreen" class="primary" data-action="play-fullscreen">PLAY FULLSCREEN</button>
+      <button id="continueWindowed" data-action="continue-windowed">CONTINUE WINDOWED</button>
+      <a class="button-link" href="highscore/">HIGH SCORE</a>
+      <button data-tap="H" data-action="continue-windowed">HELP</button>
+    </div>
+  </div>
+</div>
+
+<div id="rotateGate" class="mobile-overlay" aria-label="Rotate device">
+  <div class="mobile-panel">
+    <h2>ROTATE TO LANDSCAPE</h2>
+    <p>TURN YOUR DEVICE SIDEWAYS FOR THE COCKPIT CONTROLS</p>
+    <div class="mobile-actions">
+      <button class="primary" data-action="play-fullscreen">PLAY FULLSCREEN</button>
+    </div>
+  </div>
+</div>
+
+<div id="mobileControls" aria-label="Mobile game controls">
+  <div id="joystick" role="group" aria-label="Movement control">
+    <div id="joystickKnob"></div>
+  </div>
+  <div id="rightControls">
+    <button class="compact-action" data-tap="CTRL">MSL</button>
+    <button class="compact-action danger" data-tap="B">BOMB</button>
+    <button id="pauseButton" class="compact-action" data-tap="P">PAUSE</button>
+    <button id="boostButton" class="primary" data-hold="SHIFT">BOOST</button>
+  </div>
+</div>
+
+<div id="entryControls" aria-label="High score entry controls">
+  <button data-entry="BKSP">BKSP</button>
+  <button class="primary" data-entry="ENTER">ENTER</button>
+</div>
+<div id="victoryControls" aria-label="Victory choices">
+  <button class="primary" data-action="freeplay">FREEPLAY</button>
+  <button data-action="save-title">SAVE &amp; TITLE</button>
 </div>
 <input id="nameInput" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" enterkeyhint="done" inputmode="text" aria-label="High score name">
-<script src="shooter.js?v=20260710-1"></script>
+<script src="shooter.js?v=20260717-1"></script>
 </body>
 </html>
