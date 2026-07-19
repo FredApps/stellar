@@ -1058,9 +1058,12 @@ function hi_qualifies(s) {
 }
 function hi_insert(rank, name, s) {
   const row = { name: cleanName(name), score: s, wave, maxCombo: player.max_combo || 0, bosses: bosses_defeated || 0, at: new Date().toISOString() };
+  const previous = g_hi.find(old => old.name === row.name);
+  const improved = !previous || scoreCompare(row, previous) < 0;
   const list = cleanScoreList(g_hi.concat(row));
   hiBoards[scorePlatform()] = list;
   selectActiveBoard();
+  return improved;
 }
 async function syncScores() {
   try {
@@ -1073,7 +1076,7 @@ async function syncScores() {
     scoresOnline = false; setScoreStatus('LOCAL FALLBACK');
   }
 }
-async function submitScore(name, finalScore) {
+async function submitScore(name, finalScore, localImproved) {
   setScoreStatus('SAVING SCORE');
   try {
     const r = await fetch(SCORE_API, {
@@ -1084,9 +1087,11 @@ async function submitScore(name, finalScore) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (!data.ok || !installScoreBoards(data)) throw new Error(data.error || 'bad scores');
-    hi_save(); scoresOnline = true; setScoreStatus('SCORE SAVED');
+    hi_save(); scoresOnline = true;
+    setScoreStatus(data.personalBestImproved === false ? 'PERSONAL BEST NOT BEATEN' : 'SCORE SAVED');
   } catch (e) {
-    hi_save(); scoresOnline = false; setScoreStatus('LOCAL FALLBACK');
+    hi_save(); scoresOnline = false;
+    setScoreStatus(localImproved === false ? 'PERSONAL BEST NOT BEATEN' : 'LOCAL FALLBACK');
   }
 }
 
@@ -3113,9 +3118,9 @@ function submitEntry(replay) {
   pilotName = savedName;
   entry_name = savedName;
   syncEntryInput(false);
-  hi_insert(entry_rank, savedName, score);
+  const localImproved = hi_insert(entry_rank, savedName, score);
   hi_save();
-  submitScore(savedName, score);
+  submitScore(savedName, score, localImproved);
   if (replay || entryReplay) begin_run();
   else state = ST_SCORES;
   syncHtmlUi(false);

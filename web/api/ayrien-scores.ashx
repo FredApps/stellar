@@ -104,17 +104,22 @@ public class AyrienScoresHandler : IHttpHandler
         }
 
         ScoreBoards boards;
+        bool personalBestImproved;
         lock (Gate)
         {
             bool changed;
             var scores = LoadScoresUnlocked(out changed);
+            var previous = scores.FirstOrDefault(s => s.platform == entry.platform && s.name == entry.name);
+            personalBestImproved = previous == null || IsBetter(entry, previous);
             scores.Add(entry);
             scores = NormalizeScores(scores);
             SaveScoresUnlocked(scores);
             boards = SplitScores(scores);
         }
 
-        WriteJson(context, ScoreResponse(boards));
+        var response = ScoreResponse(boards);
+        response.Add("personalBestImproved", personalBestImproved);
+        WriteJson(context, response);
     }
 
     private static ScoreBoards LoadScores()
@@ -176,6 +181,15 @@ public class AyrienScoresHandler : IHttpHandler
             .ThenByDescending(s => s.maxCombo)
             .ThenByDescending(s => s.bosses)
             .ThenByDescending(s => s.at, StringComparer.Ordinal);
+    }
+
+    private static bool IsBetter(ScoreEntry candidate, ScoreEntry previous)
+    {
+        if (candidate.score != previous.score) return candidate.score > previous.score;
+        if (candidate.wave != previous.wave) return candidate.wave > previous.wave;
+        if (candidate.maxCombo != previous.maxCombo) return candidate.maxCombo > previous.maxCombo;
+        if (candidate.bosses != previous.bosses) return candidate.bosses > previous.bosses;
+        return String.CompareOrdinal(candidate.at, previous.at) > 0;
     }
 
     private static string CleanPlatform(string value, string name)
