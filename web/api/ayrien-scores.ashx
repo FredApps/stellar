@@ -12,6 +12,8 @@ public class AyrienScoresHandler : IHttpHandler
 {
     private static readonly object Gate = new object();
     private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
+    private const string Desktop = "desktop";
+    private const string Mobile = "mobile";
 
     public bool IsReusable { get { return false; } }
 
@@ -30,7 +32,7 @@ public class AyrienScoresHandler : IHttpHandler
             }
             if (String.Equals(context.Request.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase))
             {
-                WriteJson(context, new Dictionary<string, object> { { "ok", true }, { "scores", LoadScores() } });
+                WriteJson(context, ScoreResponse(LoadScores()));
                 return;
             }
             WriteError(context, 405, "Method not allowed.");
@@ -76,6 +78,14 @@ public class AyrienScoresHandler : IHttpHandler
         }
         if (payload == null) payload = new Dictionary<string, object>();
 
+        var platform = GetString(payload, "platform").Trim().ToLowerInvariant();
+        if (platform.Length == 0) platform = Desktop;
+        if (platform != Desktop && platform != Mobile)
+        {
+            WriteError(context, 400, "Platform must be desktop or mobile.");
+            return;
+        }
+
         var entry = new ScoreEntry
         {
             name = CleanName(GetString(payload, "name")),
@@ -83,7 +93,8 @@ public class AyrienScoresHandler : IHttpHandler
             wave = Clamp(GetInt(payload, "wave"), 0, 999),
             maxCombo = Clamp(GetInt(payload, "maxCombo"), 0, 9999),
             bosses = Clamp(GetInt(payload, "bosses"), 0, 999),
-            at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            platform = platform
         };
 
         if (entry.score <= 0)
@@ -92,57 +103,105 @@ public class AyrienScoresHandler : IHttpHandler
             return;
         }
 
-        List<ScoreEntry> scores;
+        ScoreBoards boards;
         lock (Gate)
         {
-            scores = LoadScoresUnlocked();
+            bool changed;
+            var scores = LoadScoresUnlocked(out changed);
             scores.Add(entry);
-            scores = scores
-                .OrderByDescending(s => s.score)
-                .ThenByDescending(s => s.wave)
-                .ThenByDescending(s => s.maxCombo)
-                .Take(10)
-                .ToList();
+            scores = NormalizeScores(scores);
             SaveScoresUnlocked(scores);
+            boards = SplitScores(scores);
         }
 
-        WriteJson(context, new Dictionary<string, object> { { "ok", true }, { "scores", scores } });
+        WriteJson(context, ScoreResponse(boards));
     }
 
-    private static List<ScoreEntry> LoadScores()
+    private static ScoreBoards LoadScores()
     {
-        lock (Gate) return LoadScoresUnlocked();
+        lock (Gate)
+        {
+            bool changed;
+            var scores = LoadScoresUnlocked(out changed);
+            if (changed) SaveScoresUnlocked(scores);
+            return SplitScores(scores);
+        }
     }
 
-    private static List<ScoreEntry> LoadScoresUnlocked()
+    private static List<ScoreEntry> LoadScoresUnlocked(out bool changed)
     {
         var path = ScorePath();
         if (!File.Exists(path)) path = LegacyScorePath();
-        if (!File.Exists(path)) return DefaultScores();
+        if (!File.Exists(path)) { changed = false; return DefaultScores(); }
         try
         {
             var scores = Json.Deserialize<List<ScoreEntry>>(File.ReadAllText(path));
-            if (scores == null) return DefaultScores();
-            return scores
-                .Where(s => s != null && s.score > 0)
-                .Select(s => new ScoreEntry {
-                    name = CleanName(s.name),
-                    score = Clamp(s.score, 0, 999999999),
-                    wave = Clamp(s.wave, 0, 999),
-                    maxCombo = Clamp(s.maxCombo, 0, 9999),
-                    bosses = Clamp(s.bosses, 0, 999),
-                    at = String.IsNullOrWhiteSpace(s.at) ? "" : s.at
-                })
-                .OrderByDescending(s => s.score)
-                .ThenByDescending(s => s.wave)
-                .ThenByDescending(s => s.maxCombo)
-                .Take(10)
-                .ToList();
+            if (scores == null) { changed = false; return DefaultScores(); }
+            var normalized = NormalizeScores(scores);
+            changed = Json.Serialize(scores) != Json.Serialize(normalized);
+            return normalized;
         }
         catch
         {
+            changed = false;
             return DefaultScores();
         }
+    }
+
+    private static List<ScoreEntry> NormalizeScores(IEnumerable<ScoreEntry> source)
+    {
+        var cleaned = source
+            .Where(s => s != null && s.score > 0)
+            .Select(s => new ScoreEntry {
+                name = CleanName(s.name),
+                score = Clamp(s.score, 0, 999999999),
+                wave = Clamp(s.wave, 0, 999),
+                maxCombo = Clamp(s.maxCombo, 0, 9999),
+                bosses = Clamp(s.bosses, 0, 999),
+                at = String.IsNullOrWhiteSpace(s.at) ? "" : s.at,
+                platform = CleanPlatform(s.platform, s.name)
+            })
+            .GroupBy(s => s.platform + "\n" + s.name)
+            .Select(g => Rank(g).First())
+            .ToList();
+        return Rank(cleaned.Where(s => s.platform == Desktop)).Take(10)
+            .Concat(Rank(cleaned.Where(s => s.platform == Mobile)).Take(10))
+            .ToList();
+    }
+
+    private static IOrderedEnumerable<ScoreEntry> Rank(IEnumerable<ScoreEntry> scores)
+    {
+        return scores.OrderByDescending(s => s.score)
+            .ThenByDescending(s => s.wave)
+            .ThenByDescending(s => s.maxCombo)
+            .ThenByDescending(s => s.bosses)
+            .ThenByDescending(s => s.at, StringComparer.Ordinal);
+    }
+
+    private static string CleanPlatform(string value, string name)
+    {
+        value = (value ?? "").Trim().ToLowerInvariant();
+        if (value == Mobile) return Mobile;
+        if (value == Desktop) return Desktop;
+        return CleanName(name) == "NEF" ? Mobile : Desktop;
+    }
+
+    private static ScoreBoards SplitScores(IEnumerable<ScoreEntry> scores)
+    {
+        return new ScoreBoards {
+            desktop = Rank(scores.Where(s => s.platform == Desktop)).Take(10).ToList(),
+            mobile = Rank(scores.Where(s => s.platform == Mobile)).Take(10).ToList()
+        };
+    }
+
+    private static Dictionary<string, object> ScoreResponse(ScoreBoards boards)
+    {
+        return new Dictionary<string, object> {
+            { "ok", true },
+            { "desktopScores", boards.desktop },
+            { "mobileScores", boards.mobile },
+            { "scores", boards.desktop }
+        };
     }
 
     private static void SaveScoresUnlocked(List<ScoreEntry> scores)
@@ -174,7 +233,8 @@ public class AyrienScoresHandler : IHttpHandler
         var list = new List<ScoreEntry>();
         for (var i = 0; i < 10; i++)
         {
-            list.Add(new ScoreEntry { name = names[i], score = (10 - i) * 1000, wave = 1, maxCombo = 0, bosses = 0, at = "" });
+            list.Add(new ScoreEntry { name = names[i], score = (10 - i) * 1000, wave = 1, maxCombo = 0, bosses = 0, at = "", platform = Desktop });
+            list.Add(new ScoreEntry { name = names[i], score = (10 - i) * 1000, wave = 1, maxCombo = 0, bosses = 0, at = "", platform = Mobile });
         }
         return list;
     }
@@ -224,5 +284,12 @@ public class AyrienScoresHandler : IHttpHandler
         public int maxCombo { get; set; }
         public int bosses { get; set; }
         public string at { get; set; }
+        public string platform { get; set; }
+    }
+
+    public class ScoreBoards
+    {
+        public List<ScoreEntry> desktop { get; set; }
+        public List<ScoreEntry> mobile { get; set; }
     }
 }

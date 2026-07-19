@@ -8,23 +8,30 @@
   :root { color-scheme: dark; }
   html, body { margin: 0; min-height: 100%; background: #02060b; color: #dff7ff; font-family: "Courier New", monospace; }
   body { display: flex; justify-content: center; padding: 28px 14px; box-sizing: border-box; }
-  main { width: min(720px, 100%); }
+  main { width: min(980px, 100%); }
   header { display: flex; align-items: end; justify-content: space-between; gap: 16px; border-bottom: 1px solid #27485d; padding-bottom: 12px; margin-bottom: 18px; }
   h1 { color: #ffe66d; font-size: clamp(28px, 8vw, 44px); letter-spacing: 2px; margin: 0; line-height: 1; }
   a { color: #8fe7ff; text-decoration: none; }
   a:hover { color: #fff; text-decoration: underline; }
   .status { color: #8fd; min-height: 20px; margin: 0 0 14px; }
-  table { width: 100%; border-collapse: collapse; background: #07111b; box-shadow: 0 0 0 1px #1d394c; }
+  .boards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .board h2 { margin: 0 0 8px; color: #9edcff; font-size: 20px; font-weight: normal; }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; background: #07111b; box-shadow: 0 0 0 1px #1d394c; }
   th, td { padding: 9px 10px; border-bottom: 1px solid #183247; text-align: left; }
   th { color: #9edcff; background: #0d1b29; font-weight: normal; }
+  th:nth-child(1) { width: 9%; }
+  th:nth-child(2) { width: 29%; }
+  th:nth-child(3) { width: 38%; }
+  th:nth-child(4) { width: 24%; }
   td:nth-child(1), td:nth-child(4) { color: #ffe66d; }
   td:nth-child(3), th:nth-child(3), td:nth-child(4), th:nth-child(4) { text-align: right; }
   .empty { padding: 24px; text-align: center; color: #9ab7c8; border: 1px solid #1d394c; background: #07111b; }
   @media (max-width: 520px) {
     body { padding: 18px 8px; }
-    th, td { padding: 8px 6px; font-size: 13px; }
+    th, td { padding: 8px 4px; font-size: 12px; overflow: hidden; }
     header { display: block; }
     header a { display: inline-block; margin-top: 10px; }
+    .boards { grid-template-columns: 1fr; gap: 22px; }
   }
 </style>
 </head>
@@ -32,7 +39,7 @@
 <main>
   <header><h1>HIGH SCORE</h1><a href="/stellar/">PLAY AYRIEN ASSAULT</a></header>
   <p id="status" class="status">LOADING</p>
-  <div id="scores"></div>
+  <div id="scores" class="boards"></div>
 </main>
 <script>
 (function(){
@@ -43,17 +50,23 @@
   fetch('/stellar/api/ayrien-scores.ashx', { cache: 'no-store' })
     .then(response => { if (!response.ok) throw new Error('HTTP ' + response.status); return response.json(); })
     .then(data => {
-      const list = Array.isArray(data.scores) ? data.scores : [];
-      if (!data.ok || !list.length) {
+      const desktop = Array.isArray(data.desktopScores) ? data.desktopScores : (Array.isArray(data.scores) ? data.scores : []);
+      const mobile = Array.isArray(data.mobileScores) ? data.mobileScores : [];
+      if (!data.ok) {
         status.textContent = 'NO SCORES YET';
         scores.innerHTML = '<div class="empty">NO SCORES</div>';
         return;
       }
-      status.textContent = 'SERVER LEADERBOARD';
-      scores.innerHTML = '<table><thead><tr><th>#</th><th>NAME</th><th>SCORE</th><th>WAVE</th></tr></thead><tbody>' +
-        list.slice(0, 10).map((score, index) => '<tr><td>' + (index + 1) + '</td><td>' + esc(score.name || 'PLAYER') +
-          '</td><td>' + num(score.score) + '</td><td>' + esc(score.wave || 0) + '</td></tr>').join('') +
-        '</tbody></table>';
+      const table = (label, list) => {
+        const rows = Array.from({ length: 10 }, (_, index) => {
+          const score = list[index];
+          return '<tr><td>' + (index + 1) + '</td><td>' + (score ? esc(score.name || 'PLAYER') : '--------') +
+            '</td><td>' + (score ? num(score.score) : '------') + '</td><td>' + (score ? esc(score.wave || 0) : '--') + '</td></tr>';
+        }).join('');
+        return '<section class="board"><h2>' + label + '</h2><table><thead><tr><th>#</th><th>NAME</th><th>SCORE</th><th>WAVE</th></tr></thead><tbody>' + rows + '</tbody></table></section>';
+      };
+      status.textContent = 'GLOBAL SERVER LEADERBOARDS';
+      scores.innerHTML = table('DESKTOP', desktop.slice(0, 10)) + table('MOBILE', mobile.slice(0, 10));
     })
     .catch(() => {
       status.textContent = 'SCORES UNAVAILABLE';

@@ -978,32 +978,56 @@ const HS_KEY = 'ayrien_assault_hiscores';
 const LEGACY_HS_KEY = 'stellar_assault_hiscores';
 const SCORE_API = 'api/ayrien-scores.ashx';
 const DEF_NAMES = ['ACE','NOVA','COMET','ORION','VEGA','PULSAR','ROOKIE','CADET','DRIFT','PIXEL'];
+const hiBoards = { desktop: [], mobile: [] };
 let g_hi = [];
 let scoreStatus = 'SYNCING SCORES';
 let scoresOnline = false;
 function cleanName(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9 $]/g, '').slice(0, NAME_LEN); }
+function scorePlatform() { return mobileMode ? 'mobile' : 'desktop'; }
+function defaultScoreList() {
+  return DEF_NAMES.map((n, i) => ({ name: n, score: (HISCORE_N - i) * 1000, wave: 1, maxCombo: 0, bosses: 0 }));
+}
+function selectActiveBoard() { g_hi = hiBoards[scorePlatform()]; }
 function hi_defaults() {
-  g_hi = DEF_NAMES.map((n, i) => ({ name: n, score: (HISCORE_N - i) * 1000 }));
+  hiBoards.desktop = defaultScoreList();
+  hiBoards.mobile = defaultScoreList();
+  selectActiveBoard();
+}
+function scoreCompare(a, b) {
+  return (b.score - a.score) || (b.wave - a.wave) || (b.maxCombo - a.maxCombo) ||
+    (b.bosses - a.bosses) || String(b.at || '').localeCompare(String(a.at || ''));
 }
 function cleanScoreList(v) {
-  if (!Array.isArray(v)) return null;
+  if (!Array.isArray(v)) return [];
   const list = v.filter(s => s && Number.isFinite(Number(s.score)))
     .map(s => ({
       name: cleanName(s.name || 'PLAYER') || 'PLAYER',
       score: Math.max(0, Math.floor(Number(s.score) || 0)),
       wave: Math.max(0, Math.floor(Number(s.wave) || 0)),
       maxCombo: Math.max(0, Math.floor(Number(s.maxCombo) || 0)),
-      bosses: Math.max(0, Math.floor(Number(s.bosses) || 0))
+      bosses: Math.max(0, Math.floor(Number(s.bosses) || 0)),
+      at: String(s.at || '')
     }))
-    .sort((a, b) => (b.score - a.score) || (b.wave - a.wave) || (b.maxCombo - a.maxCombo))
-    .slice(0, HISCORE_N);
-  if (!list.length) return null;
-  for (let i = list.length; i < HISCORE_N; i++) {
-    list.push({ name: DEF_NAMES[i] || 'PLAYER', score: (HISCORE_N - i) * 1000, wave: 1, maxCombo: 0, bosses: 0 });
+    .sort(scoreCompare);
+  const unique = [];
+  const names = new Set();
+  for (const row of list) {
+    if (names.has(row.name)) continue;
+    names.add(row.name);
+    unique.push(row);
+    if (unique.length === HISCORE_N) break;
   }
-  return list
-    .sort((a, b) => (b.score - a.score) || (b.wave - a.wave) || (b.maxCombo - a.maxCombo))
-    .slice(0, HISCORE_N);
+  return unique;
+}
+function installScoreBoards(data) {
+  if (!data || typeof data !== 'object') return false;
+  const desktop = cleanScoreList(data.desktopScores || data.desktop || data.scores);
+  const mobile = cleanScoreList(data.mobileScores || data.mobile);
+  if (!desktop.length && !mobile.length) return false;
+  hiBoards.desktop = desktop;
+  hiBoards.mobile = mobile;
+  selectActiveBoard();
+  return true;
 }
 function setScoreStatus(s) {
   scoreStatus = s;
@@ -1013,25 +1037,38 @@ function setScoreStatus(s) {
 function hi_load() {
   try {
     const saved = localStorage.getItem(HS_KEY) || localStorage.getItem(LEGACY_HS_KEY);
-    const v = cleanScoreList(JSON.parse(saved));
-    if (v) { g_hi = v; hi_save(); return; }
+    const parsed = JSON.parse(saved);
+    if (installScoreBoards(parsed)) { hi_save(); return; }
+    const legacy = cleanScoreList(parsed);
+    if (legacy.length) {
+      hiBoards.desktop = scorePlatform() === 'desktop' ? legacy : defaultScoreList();
+      hiBoards.mobile = scorePlatform() === 'mobile' ? legacy : defaultScoreList();
+      selectActiveBoard(); hi_save(); return;
+    }
   } catch (e) {}
   hi_defaults();
 }
-function hi_save() { try { localStorage.setItem(HS_KEY, JSON.stringify(g_hi)); } catch (e) {} }
-function hi_qualifies(s) { for (let i = 0; i < HISCORE_N; i++) if (s > g_hi[i].score) return i; return -1; }
+function hi_save() {
+  try { localStorage.setItem(HS_KEY, JSON.stringify({ version: 2, desktop: hiBoards.desktop, mobile: hiBoards.mobile })); } catch (e) {}
+}
+function hi_qualifies(s) {
+  if (g_hi.length < HISCORE_N) return g_hi.length;
+  for (let i = 0; i < HISCORE_N; i++) if (s > g_hi[i].score) return i;
+  return -1;
+}
 function hi_insert(rank, name, s) {
-  g_hi.splice(rank, 0, { name: name.slice(0, NAME_LEN), score: s, wave, maxCombo: player.max_combo || 0, bosses: bosses_defeated || 0 });
-  g_hi.length = HISCORE_N;
+  const row = { name: cleanName(name), score: s, wave, maxCombo: player.max_combo || 0, bosses: bosses_defeated || 0, at: new Date().toISOString() };
+  const list = cleanScoreList(g_hi.concat(row));
+  hiBoards[scorePlatform()] = list;
+  selectActiveBoard();
 }
 async function syncScores() {
   try {
     const r = await fetch(SCORE_API, { cache: 'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
-    const list = cleanScoreList(data.scores);
-    if (!data.ok || !list) throw new Error(data.error || 'bad scores');
-    g_hi = list; hi_save(); scoresOnline = true; setScoreStatus('ONLINE SCORES');
+    if (!data.ok || !installScoreBoards(data)) throw new Error(data.error || 'bad scores');
+    hi_save(); scoresOnline = true; setScoreStatus('ONLINE SCORES');
   } catch (e) {
     scoresOnline = false; setScoreStatus('LOCAL FALLBACK');
   }
@@ -1042,13 +1079,12 @@ async function submitScore(name, finalScore) {
     const r = await fetch(SCORE_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, score: finalScore, wave: last_wave || wave, maxCombo: last_combo || player.max_combo || 0, bosses: last_bosses || bosses_defeated || 0 })
+      body: JSON.stringify({ name, score: finalScore, wave: last_wave || wave, maxCombo: last_combo || player.max_combo || 0, bosses: last_bosses || bosses_defeated || 0, platform: scorePlatform() })
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
-    const list = cleanScoreList(data.scores);
-    if (!data.ok || !list) throw new Error(data.error || 'bad scores');
-    g_hi = list; hi_save(); scoresOnline = true; setScoreStatus('SCORE SAVED');
+    if (!data.ok || !installScoreBoards(data)) throw new Error(data.error || 'bad scores');
+    hi_save(); scoresOnline = true; setScoreStatus('SCORE SAVED');
   } catch (e) {
     hi_save(); scoresOnline = false; setScoreStatus('LOCAL FALLBACK');
   }
@@ -2824,8 +2860,11 @@ function draw_title() {
     text_center(132, 'SHIFT BOOST  SPACE FIRE', C_LCYAN);
     text_center(144, 'CTRL MSL  B BOMB  H HELP', C_DGRAY);
   } else if (page === 1) {
-    text_center(122, 'HI ' + pad6(g_hi[0].score) + '  ' + g_hi[0].name.slice(0,8), C_LGREEN);
-    text_center(136, '2  ' + pad6(g_hi[1].score) + '  ' + g_hi[1].name.slice(0,8), C_LCYAN);
+    const first = g_hi[0] || { score: 0, name: '--------' };
+    const second = g_hi[1] || { score: 0, name: '--------' };
+    text_center(118, (mobileMode ? 'MOBILE' : 'DESKTOP') + ' BEST', C_LGRAY);
+    text_center(132, 'HI ' + pad6(first.score) + '  ' + first.name.slice(0,8), C_LGREEN);
+    text_center(146, '2  ' + pad6(second.score) + '  ' + second.name.slice(0,8), C_LCYAN);
   } else if (page === 2) {
     text_center(120, 'LAST WAVE ' + last_wave, C_LCYAN);
     text_center(134, 'MAX COMBO ' + last_combo, C_YELLOW);
@@ -2969,18 +3008,25 @@ function draw_help() {
     text_draw(20, 126, 'HARD: MORE + DENSER ATTACKS', C_LRED);
     text_draw(20, 139, 'NORMAL DROPS E/N/H: 18/15/12 PCT', C_DGRAY);
     text_draw(20, 152, 'ESCORT DROPS E/N/H: 55/50/45 PCT', C_LGREEN);
-    text_draw(20, 165, 'ALL MODES SHARE ONE HIGH SCORE', C_WHITE);
+    text_draw(20, 165, 'DESKTOP + MOBILE SCORE BOARDS', C_WHITE);
   }
   help_nav();
 }
 function draw_scores() {
-  text_center(16, 'HIGH SCORES', C_YELLOW);
+  text_center(4, 'GLOBAL HIGH SCORES', C_YELLOW);
+  text_draw(42, 18, 'DESKTOP', C_LCYAN);
+  text_draw(208, 18, 'MOBILE', C_LGREEN);
   for (let i = 0; i < HISCORE_N; i++) {
-    const b = (i+1) + '. ' + g_hi[i].name.padEnd(8) + ' ' + pad6(g_hi[i].score);
-    text_center(34 + i*12, b, i === 0 ? C_WHITE : C_LCYAN);
+    const desktop = hiBoards.desktop[i];
+    const mobile = hiBoards.mobile[i];
+    const rank = String(i + 1).padStart(2) + ' ';
+    const dl = desktop ? desktop.name.padEnd(8) + ' ' + pad6(desktop.score) : '-------- ------';
+    const ml = mobile ? mobile.name.padEnd(8) + ' ' + pad6(mobile.score) : '-------- ------';
+    text_draw(2, 32 + i*12, rank + dl, i === 0 ? C_WHITE : C_LCYAN);
+    text_draw(162, 32 + i*12, rank + ml, i === 0 ? C_WHITE : C_LGREEN);
   }
-  text_center(164, scoreStatus, scoresOnline ? C_LGREEN : C_YELLOW);
-  if (frame & 16) text_center(180, mobileMode ? 'TITLE OR REPLAY BELOW' : 'SPACE TITLE   CTRL REPLAY', C_LGREEN);
+  text_center(158, scoreStatus, scoresOnline ? C_LGREEN : C_YELLOW);
+  if (frame & 16) text_center(178, mobileMode ? 'TITLE OR REPLAY BELOW' : 'SPACE TITLE   CTRL REPLAY', C_LGREEN);
 }
 function draw_entry() {
   text_center(60, 'NEW HIGH SCORE!', C_YELLOW);
@@ -3229,6 +3275,7 @@ function updateMobileMode() {
   if (next !== mobileMode) {
     mobileMode = next;
     mobileLaunchDismissed = !mobileMode;
+    selectActiveBoard();
     clearInput();
   }
   syncHtmlUi(false);
@@ -3588,6 +3635,8 @@ if (urlParams.get('shot') === 'win') {
   state = ST_WIN; win_t = WIN_INPUT_DELAY + 30; mobileLaunchDismissed = true; snd_music_set(MUS_WIN);
 } else if (urlParams.get('shot') === 'entry') {
   score = 987650; entry_rank = 0; mobileLaunchDismissed = true; enterHighScoreEntry(false);
+} else if (urlParams.get('shot') === 'scores') {
+  state = ST_SCORES; mobileLaunchDismissed = true;
 }
 updateFullscreenButtons();
 updateAudioButtons();
