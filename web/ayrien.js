@@ -3569,6 +3569,9 @@ function showScores() {
   if (state === ST_PLAY && !paused) return;
   syncScores();
   state = ST_SCORES;
+  mobileLaunchDismissed = true;
+  syncHtmlUi(false);
+  rescale();
 }
 function returnToTitle() {
   clearCombatFx();
