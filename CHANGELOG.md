@@ -5,6 +5,8 @@ matching section in this file.
 
 ## Unreleased
 
+- Global desktop and mobile leaderboards now retain and display the Easy, Normal, or Hard difficulty
+  (`E/N/H`) attached to each player's highest-scoring run on that platform.
 - Renamed the game to Ayrien Assault across the DOS build, browser port, sound bank,
   configuration, floppy image, release archives, documentation, and generated captures.
 - Made browser music unlock on the first ordinary pointer, touch, click, or key gesture;

@@ -93,6 +93,7 @@ public class AyrienScoresHandler : IHttpHandler
             wave = Clamp(GetInt(payload, "wave"), 0, 999),
             maxCombo = Clamp(GetInt(payload, "maxCombo"), 0, 9999),
             bosses = Clamp(GetInt(payload, "bosses"), 0, 999),
+            difficulty = CleanDifficulty(GetString(payload, "difficulty")),
             at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
             platform = platform
         };
@@ -163,6 +164,7 @@ public class AyrienScoresHandler : IHttpHandler
                 wave = Clamp(s.wave, 0, 999),
                 maxCombo = Clamp(s.maxCombo, 0, 9999),
                 bosses = Clamp(s.bosses, 0, 999),
+                difficulty = CleanDifficulty(s.difficulty),
                 at = String.IsNullOrWhiteSpace(s.at) ? "" : s.at,
                 platform = CleanPlatform(s.platform, s.name)
             })
@@ -198,6 +200,12 @@ public class AyrienScoresHandler : IHttpHandler
         if (value == Mobile) return Mobile;
         if (value == Desktop) return Desktop;
         return CleanName(name) == "NEF" ? Mobile : Desktop;
+    }
+
+    private static string CleanDifficulty(string value)
+    {
+        value = (value ?? "N").Trim().ToUpperInvariant();
+        return value == "E" || value == "H" ? value : "N";
     }
 
     private static ScoreBoards SplitScores(IEnumerable<ScoreEntry> scores)
@@ -247,8 +255,8 @@ public class AyrienScoresHandler : IHttpHandler
         var list = new List<ScoreEntry>();
         for (var i = 0; i < 10; i++)
         {
-            list.Add(new ScoreEntry { name = names[i], score = (10 - i) * 1000, wave = 1, maxCombo = 0, bosses = 0, at = "", platform = Desktop });
-            list.Add(new ScoreEntry { name = names[i], score = (10 - i) * 1000, wave = 1, maxCombo = 0, bosses = 0, at = "", platform = Mobile });
+            list.Add(new ScoreEntry { name = names[i], score = (10 - i) * 1000, wave = 1, maxCombo = 0, bosses = 0, difficulty = "N", at = "", platform = Desktop });
+            list.Add(new ScoreEntry { name = names[i], score = (10 - i) * 1000, wave = 1, maxCombo = 0, bosses = 0, difficulty = "N", at = "", platform = Mobile });
         }
         return list;
     }
@@ -297,6 +305,7 @@ public class AyrienScoresHandler : IHttpHandler
         public int wave { get; set; }
         public int maxCombo { get; set; }
         public int bosses { get; set; }
+        public string difficulty { get; set; }
         public string at { get; set; }
         public string platform { get; set; }
     }

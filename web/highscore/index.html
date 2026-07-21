@@ -19,12 +19,13 @@
   table { width: 100%; table-layout: fixed; border-collapse: collapse; background: #07111b; box-shadow: 0 0 0 1px #1d394c; }
   th, td { padding: 9px 10px; border-bottom: 1px solid #183247; text-align: left; }
   th { color: #9edcff; background: #0d1b29; font-weight: normal; }
-  th:nth-child(1) { width: 9%; }
-  th:nth-child(2) { width: 29%; }
-  th:nth-child(3) { width: 38%; }
-  th:nth-child(4) { width: 24%; }
-  td:nth-child(1), td:nth-child(4) { color: #ffe66d; }
-  td:nth-child(3), th:nth-child(3), td:nth-child(4), th:nth-child(4) { text-align: right; }
+  th:nth-child(1) { width: 8%; }
+  th:nth-child(2) { width: 27%; }
+  th:nth-child(3) { width: 13%; }
+  th:nth-child(4) { width: 32%; }
+  th:nth-child(5) { width: 20%; }
+  td:nth-child(1), td:nth-child(3), td:nth-child(5) { color: #ffe66d; }
+  td:nth-child(3), th:nth-child(3), td:nth-child(4), th:nth-child(4), td:nth-child(5), th:nth-child(5) { text-align: right; }
   .empty { padding: 24px; text-align: center; color: #9ab7c8; border: 1px solid #1d394c; background: #07111b; }
   @media (max-width: 520px) {
     body { padding: 18px 8px; }
@@ -47,6 +48,7 @@
   const scores = document.getElementById('scores');
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const num = value => Number(value || 0).toLocaleString('en-US');
+  const difficulty = value => ['E','N','H'].includes(String(value || '').toUpperCase()) ? String(value).toUpperCase() : 'N';
   fetch('/stellar/api/ayrien-scores.ashx', { cache: 'no-store' })
     .then(response => { if (!response.ok) throw new Error('HTTP ' + response.status); return response.json(); })
     .then(data => {
@@ -61,9 +63,10 @@
         const rows = Array.from({ length: 10 }, (_, index) => {
           const score = list[index];
           return '<tr><td>' + (index + 1) + '</td><td>' + (score ? esc(score.name || 'PLAYER') : '--------') +
-            '</td><td>' + (score ? num(score.score) : '------') + '</td><td>' + (score ? esc(score.wave || 0) : '--') + '</td></tr>';
+            '</td><td>' + (score ? difficulty(score.difficulty) : '-') + '</td><td>' +
+            (score ? num(score.score) : '------') + '</td><td>' + (score ? esc(score.wave || 0) : '--') + '</td></tr>';
         }).join('');
-        return '<section class="board"><h2>' + label + '</h2><table><thead><tr><th>#</th><th>NAME</th><th>SCORE</th><th>WAVE</th></tr></thead><tbody>' + rows + '</tbody></table></section>';
+        return '<section class="board"><h2>' + label + '</h2><table><thead><tr><th>#</th><th>NAME</th><th>DIFF</th><th>SCORE</th><th>WAVE</th></tr></thead><tbody>' + rows + '</tbody></table></section>';
       };
       status.textContent = 'GLOBAL SERVER LEADERBOARDS';
       scores.innerHTML = table('DESKTOP', desktop.slice(0, 10)) + table('MOBILE', mobile.slice(0, 10));

@@ -984,8 +984,13 @@ let scoreStatus = 'SYNCING SCORES';
 let scoresOnline = false;
 function cleanName(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9 $]/g, '').slice(0, NAME_LEN); }
 function scorePlatform() { return mobileMode ? 'mobile' : 'desktop'; }
+function cleanDifficulty(value) {
+  const difficulty = String(value || 'N').trim().toUpperCase();
+  return difficulty === 'E' || difficulty === 'H' ? difficulty : 'N';
+}
+function scoreDifficulty() { return g_diff === DIF_EASY ? 'E' : g_diff === DIF_HARD ? 'H' : 'N'; }
 function defaultScoreList() {
-  return DEF_NAMES.map((n, i) => ({ name: n, score: (HISCORE_N - i) * 1000, wave: 1, maxCombo: 0, bosses: 0 }));
+  return DEF_NAMES.map((n, i) => ({ name: n, score: (HISCORE_N - i) * 1000, wave: 1, maxCombo: 0, bosses: 0, difficulty: 'N' }));
 }
 function selectActiveBoard() { g_hi = hiBoards[scorePlatform()]; }
 function hi_defaults() {
@@ -1006,6 +1011,7 @@ function cleanScoreList(v) {
       wave: Math.max(0, Math.floor(Number(s.wave) || 0)),
       maxCombo: Math.max(0, Math.floor(Number(s.maxCombo) || 0)),
       bosses: Math.max(0, Math.floor(Number(s.bosses) || 0)),
+      difficulty: cleanDifficulty(s.difficulty),
       at: String(s.at || '')
     }))
     .sort(scoreCompare);
@@ -1049,7 +1055,7 @@ function hi_load() {
   hi_defaults();
 }
 function hi_save() {
-  try { localStorage.setItem(HS_KEY, JSON.stringify({ version: 2, desktop: hiBoards.desktop, mobile: hiBoards.mobile })); } catch (e) {}
+  try { localStorage.setItem(HS_KEY, JSON.stringify({ version: 3, desktop: hiBoards.desktop, mobile: hiBoards.mobile })); } catch (e) {}
 }
 function hi_qualifies(s) {
   if (g_hi.length < HISCORE_N) return g_hi.length;
@@ -1057,7 +1063,8 @@ function hi_qualifies(s) {
   return -1;
 }
 function hi_insert(rank, name, s) {
-  const row = { name: cleanName(name), score: s, wave, maxCombo: player.max_combo || 0, bosses: bosses_defeated || 0, at: new Date().toISOString() };
+  const row = { name: cleanName(name), score: s, wave, maxCombo: player.max_combo || 0,
+                bosses: bosses_defeated || 0, difficulty: scoreDifficulty(), at: new Date().toISOString() };
   const previous = g_hi.find(old => old.name === row.name);
   const improved = !previous || scoreCompare(row, previous) < 0;
   const list = cleanScoreList(g_hi.concat(row));
@@ -1082,7 +1089,10 @@ async function submitScore(name, finalScore, localImproved) {
     const r = await fetch(SCORE_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, score: finalScore, wave: last_wave || wave, maxCombo: last_combo || player.max_combo || 0, bosses: last_bosses || bosses_defeated || 0, platform: scorePlatform() })
+      body: JSON.stringify({ name, score: finalScore, wave: last_wave || wave,
+        maxCombo: last_combo || player.max_combo || 0,
+        bosses: last_bosses || bosses_defeated || 0,
+        difficulty: scoreDifficulty(), platform: scorePlatform() })
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
@@ -2868,8 +2878,8 @@ function draw_title() {
     const first = g_hi[0] || { score: 0, name: '--------' };
     const second = g_hi[1] || { score: 0, name: '--------' };
     text_center(118, (mobileMode ? 'MOBILE' : 'DESKTOP') + ' BEST', C_LGRAY);
-    text_center(132, 'HI ' + pad6(first.score) + '  ' + first.name.slice(0,8), C_LGREEN);
-    text_center(146, '2  ' + pad6(second.score) + '  ' + second.name.slice(0,8), C_LCYAN);
+    text_center(132, 'HI ' + cleanDifficulty(first.difficulty) + ' ' + pad6(first.score) + '  ' + first.name.slice(0,8), C_LGREEN);
+    text_center(146, '2  ' + cleanDifficulty(second.difficulty) + ' ' + pad6(second.score) + '  ' + second.name.slice(0,8), C_LCYAN);
   } else if (page === 2) {
     text_center(120, 'LAST WAVE ' + last_wave, C_LCYAN);
     text_center(134, 'MAX COMBO ' + last_combo, C_YELLOW);
@@ -3019,14 +3029,14 @@ function draw_help() {
 }
 function draw_scores() {
   text_center(4, 'GLOBAL HIGH SCORES', C_YELLOW);
-  text_draw(42, 18, 'DESKTOP', C_LCYAN);
-  text_draw(208, 18, 'MOBILE', C_LGREEN);
+  text_draw(22, 18, 'DESKTOP E/N/H', C_LCYAN);
+  text_draw(184, 18, 'MOBILE E/N/H', C_LGREEN);
   for (let i = 0; i < HISCORE_N; i++) {
     const desktop = hiBoards.desktop[i];
     const mobile = hiBoards.mobile[i];
     const rank = String(i + 1).padStart(2) + ' ';
-    const dl = desktop ? desktop.name.padEnd(8) + ' ' + pad6(desktop.score) : '-------- ------';
-    const ml = mobile ? mobile.name.padEnd(8) + ' ' + pad6(mobile.score) : '-------- ------';
+    const dl = desktop ? desktop.name.padEnd(8) + ' ' + cleanDifficulty(desktop.difficulty) + pad6(desktop.score) : '-------- N------';
+    const ml = mobile ? mobile.name.padEnd(8) + ' ' + cleanDifficulty(mobile.difficulty) + pad6(mobile.score) : '-------- N------';
     text_draw(2, 32 + i*12, rank + dl, i === 0 ? C_WHITE : C_LCYAN);
     text_draw(162, 32 + i*12, rank + ml, i === 0 ? C_WHITE : C_LGREEN);
   }
